@@ -85,19 +85,7 @@ export function GameCanvas() {
           if (!player) return;
           const input = inputManager.poll();
           const params = (window as any).__physics ?? defaultPhysics;
-          player = updatePlayer(player, input, params);
-
-          // Phase 2 hack: fake floor at start Y so player is visible.
-          // Remove when Collision.ts is integrated in Phase 3.
-          const floorY = start.worldY;
-          if (player.worldY >= floorY) {
-            player = {
-              ...player,
-              worldY: floorY,
-              vy: 0,
-              grounded: true,
-            };
-          }
+          player = updatePlayer(player, input, params, tileMap);
 
           // Respawn if player falls way off screen
           if (player.worldY > start.worldY + 2000) {

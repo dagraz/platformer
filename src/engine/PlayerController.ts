@@ -1,16 +1,19 @@
 import { Player, InputState, PhysicsParams, PlayerState, DEBUG } from './types';
+import { TileMap } from './TileMap';
 import { applyGravity, applyWalk, applyJump, applyFriction } from './Physics';
+import { resolve } from './Collision';
 
 /**
  * Updates the player for one physics frame.
- * Phase 2: no collision — player falls through tiles.
+ * Applies physics, then resolves collision against the tile grid.
  */
 export function updatePlayer(
   player: Player,
   input: InputState,
   params: PhysicsParams,
+  tileMap: TileMap,
 ): Player {
-  // 1. Apply physics
+  // 1. Apply physics to get desired velocity
   const walk = applyWalk(player, input, params);
   const friction = applyFriction({ ...player, vx: walk.vx }, input, params);
   const jump = applyJump(player, input, params);
@@ -19,9 +22,13 @@ export function updatePlayer(
   const vx = friction.vx;
   const vy = gravity.vy;
 
-  // 2. Update position (no collision yet)
-  const worldX = player.worldX + vx;
-  const worldY = player.worldY + vy;
+  // 2. Resolve collision (X first, then Y)
+  const col = resolve(
+    player.worldX, player.worldY,
+    vx, vy,
+    player.width, player.height,
+    tileMap,
+  );
 
   // 3. Determine facing direction
   let facing = player.facing;
@@ -30,11 +37,11 @@ export function updatePlayer(
 
   // 4. Determine player state
   let state: PlayerState;
-  if (vy < -0.1) {
+  if (col.vy < -0.1) {
     state = 'jump';
-  } else if (vy > 0.1 && !player.grounded) {
+  } else if (col.vy > 0.1 && !col.grounded) {
     state = 'fall';
-  } else if (Math.abs(vx) > 0.1) {
+  } else if (Math.abs(col.vx) > 0.1) {
     state = 'walk';
   } else {
     state = 'idle';
@@ -42,14 +49,15 @@ export function updatePlayer(
 
   const newPlayer: Player = {
     ...player,
-    worldX,
-    worldY,
-    vx,
-    vy,
+    worldX: col.worldX,
+    worldY: col.worldY,
+    vx: col.vx,
+    vy: col.vy,
     facing,
     state,
     jumpHoldTimer: jump.jumpHoldTimer,
-    grounded: false, // No collision yet — always falling
+    grounded: col.grounded,
+    onLadder: col.onLadder,
   };
 
   if (DEBUG && state !== player.state) {
