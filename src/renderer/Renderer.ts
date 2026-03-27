@@ -1,11 +1,12 @@
 import { TileMap } from '../engine/TileMap';
-import { CameraState, VIEWPORT_WIDTH, VIEWPORT_HEIGHT } from '../engine/types';
+import { CameraState, Player, VIEWPORT_WIDTH, VIEWPORT_HEIGHT } from '../engine/types';
 import { renderTiles } from './TileRenderer';
 
 export function render(
   ctx: CanvasRenderingContext2D,
   tileMap: TileMap,
   camera: CameraState,
+  player?: Player,
 ): void {
   // Clear
   ctx.clearRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
@@ -27,5 +28,31 @@ export function render(
       dx - camera.offsetX,
       dy - camera.offsetY,
     );
+  }
+
+  // Draw player
+  if (player) {
+    const screenOrigin = tileMap.getScreenOrigin(camera.currentScreen);
+    const px = player.worldX - screenOrigin.worldX - camera.offsetX;
+    const py = player.worldY - screenOrigin.worldY - camera.offsetY;
+
+    ctx.fillStyle = '#E74C3C'; // red rectangle
+    ctx.fillRect(px, py, player.width, player.height);
+
+    // Direction indicator (small triangle)
+    ctx.fillStyle = '#C0392B';
+    const cx = player.facing === 'right' ? px + player.width - 8 : px + 8;
+    const cy = py + 20;
+    ctx.beginPath();
+    if (player.facing === 'right') {
+      ctx.moveTo(cx, cy - 6);
+      ctx.lineTo(cx + 10, cy);
+      ctx.lineTo(cx, cy + 6);
+    } else {
+      ctx.moveTo(cx, cy - 6);
+      ctx.lineTo(cx - 10, cy);
+      ctx.lineTo(cx, cy + 6);
+    }
+    ctx.fill();
   }
 }
