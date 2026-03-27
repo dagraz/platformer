@@ -3,9 +3,11 @@ import { TileMap } from '../engine/TileMap';
 import { InputManager } from '../engine/InputManager';
 import { GameLoop } from '../engine/GameLoop';
 import { updatePlayer } from '../engine/PlayerController';
+import { updateCamera } from '../engine/Camera';
 import { defaultPhysics } from '../data/defaultPhysics';
 import {
   CameraState,
+  InputState,
   LevelData,
   Player,
   VIEWPORT_WIDTH,
@@ -13,6 +15,15 @@ import {
   TILE_SIZE,
 } from '../engine/types';
 import { render } from '../renderer/Renderer';
+
+const EMPTY_INPUT: InputState = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  jump: false,
+  jumpPressed: false,
+};
 
 function findPlayerStart(level: LevelData): { worldX: number; worldY: number; screenKey: string } {
   const entity = level.entities.find(e => e.type === 'player_start');
@@ -45,13 +56,14 @@ export function GameCanvas() {
     const gameLoop = new GameLoop();
 
     let player: Player | null = null;
-    const camera: CameraState = {
+    let camera: CameraState = {
       currentScreen: '0,0',
       targetScreen: null,
       transitionProgress: 0,
       offsetX: 0,
       offsetY: 0,
     };
+    let inputLocked = false;
 
     fetch('/assets/levels/demo.json')
       .then(res => res.json())
@@ -83,9 +95,19 @@ export function GameCanvas() {
 
         gameLoop.setUpdateCallback(() => {
           if (!player) return;
-          const input = inputManager.poll();
+
+          // Lock input during screen transitions
+          const input = inputLocked ? EMPTY_INPUT : inputManager.poll();
           const params = (window as any).__physics ?? defaultPhysics;
           player = updatePlayer(player, input, params, tileMap);
+
+          // Update camera (detect transitions)
+          const camResult = updateCamera(camera, player, tileMap);
+          camera = camResult.camera;
+          inputLocked = camResult.inputLocked;
+
+          // Track current screen on player
+          player = { ...player, currentScreen: camera.currentScreen };
 
           // Respawn if player falls way off screen
           if (player.worldY > start.worldY + 2000) {
@@ -98,7 +120,16 @@ export function GameCanvas() {
               state: 'idle',
               grounded: false,
               jumpHoldTimer: -1,
+              currentScreen: start.screenKey,
             };
+            camera = {
+              currentScreen: start.screenKey,
+              targetScreen: null,
+              transitionProgress: 0,
+              offsetX: 0,
+              offsetY: 0,
+            };
+            inputLocked = false;
           }
         });
 

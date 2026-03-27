@@ -1,11 +1,11 @@
 import { Player, InputState, PhysicsParams, PlayerState, DEBUG } from './types';
 import { TileMap } from './TileMap';
-import { applyGravity, applyWalk, applyJump, applyFriction } from './Physics';
+import { applyGravity, applyWalk, applyJump, applyFriction, applyClimb } from './Physics';
 import { resolve } from './Collision';
 
 /**
  * Updates the player for one physics frame.
- * Applies physics, then resolves collision against the tile grid.
+ * Applies physics (or climb), then resolves collision against the tile grid.
  */
 export function updatePlayer(
   player: Player,
@@ -13,16 +13,41 @@ export function updatePlayer(
   params: PhysicsParams,
   tileMap: TileMap,
 ): Player {
-  // 1. Apply physics to get desired velocity
-  const walk = applyWalk(player, input, params);
-  const friction = applyFriction({ ...player, vx: walk.vx }, input, params);
-  const jump = applyJump(player, input, params);
-  const gravity = applyGravity({ ...player, vy: jump.vy }, params);
+  // Determine if we're climbing
+  const wantsClimb = (input.up || input.down) && player.onLadder;
+  const isClimbing = player.state === 'climb';
+  const shouldClimb = wantsClimb || (isClimbing && player.onLadder && !input.jumpPressed);
 
-  const vx = friction.vx;
-  const vy = gravity.vy;
+  let vx: number;
+  let vy: number;
+  let jumpHoldTimer = player.jumpHoldTimer;
 
-  // 2. Resolve collision (X first, then Y)
+  if (shouldClimb) {
+    // Climbing: no gravity, no horizontal walk, just vertical movement
+    const climb = applyClimb(player, input, params);
+    vx = 0;
+    vy = climb.vy;
+    jumpHoldTimer = -1;
+
+    // Allow jumping off a ladder
+    if (input.jumpPressed) {
+      const jump = applyJump({ ...player, grounded: true }, input, params);
+      vy = jump.vy;
+      jumpHoldTimer = jump.jumpHoldTimer;
+    }
+  } else {
+    // Normal movement: walk, jump, gravity, friction
+    const walk = applyWalk(player, input, params);
+    const friction = applyFriction({ ...player, vx: walk.vx }, input, params);
+    const jump = applyJump(player, input, params);
+    const gravity = applyGravity({ ...player, vy: jump.vy }, params);
+
+    vx = friction.vx;
+    vy = gravity.vy;
+    jumpHoldTimer = jump.jumpHoldTimer;
+  }
+
+  // Resolve collision (X first, then Y)
   const col = resolve(
     player.worldX, player.worldY,
     vx, vy,
@@ -30,14 +55,16 @@ export function updatePlayer(
     tileMap,
   );
 
-  // 3. Determine facing direction
+  // Determine facing direction
   let facing = player.facing;
   if (input.left && !input.right) facing = 'left';
   if (input.right && !input.left) facing = 'right';
 
-  // 4. Determine player state
+  // Determine player state
   let state: PlayerState;
-  if (col.vy < -0.1) {
+  if (shouldClimb && col.onLadder) {
+    state = 'climb';
+  } else if (col.vy < -0.1) {
     state = 'jump';
   } else if (col.vy > 0.1 && !col.grounded) {
     state = 'fall';
@@ -55,7 +82,7 @@ export function updatePlayer(
     vy: col.vy,
     facing,
     state,
-    jumpHoldTimer: jump.jumpHoldTimer,
+    jumpHoldTimer,
     grounded: col.grounded,
     onLadder: col.onLadder,
   };
