@@ -1,11 +1,12 @@
-"""Grid line fragment analysis for scanned/photographed graph paper.
+"""Grid line fragment analysis and precise grid detection.
 
 Phase 2: Detects LSD line fragments and extracts geometric properties
 needed for correction — dominant grid angles, rough grid period, and
 spatial angle variation (for perspective estimation).
 
-Does NOT find precise grid positions — that requires axis-aligned lines
-which only exist after Phase 3 geometric correction.
+Phase 3 (additions): After geometric correction produces an axis-aligned
+image, find_grid_positions() uses projection profiles to locate precise
+grid line positions and classify heavy/light line patterns.
 """
 
 from __future__ import annotations
@@ -15,6 +16,18 @@ from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
+
+
+@dataclass
+class GridDetectionResult:
+    """Precise grid positions found on a corrected (axis-aligned) image."""
+
+    h_positions: list[float]     # y-coords of horizontal lines
+    v_positions: list[float]     # x-coords of vertical lines
+    h_period: float
+    v_period: float
+    h_heavy_indices: list[int]   # indices into h_positions
+    v_heavy_indices: list[int]   # indices into v_positions
 
 
 @dataclass
@@ -364,4 +377,366 @@ def analyze_grid_geometry(image: np.ndarray) -> GridGeometry:
             "horizontal": h_spatial,
             "vertical": v_spatial,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Precise grid detection via projection profiles
+# ---------------------------------------------------------------------------
+
+
+def _build_projection_profile(
+    gray: np.ndarray,
+    axis: int,
+    use_edges: bool = False,
+) -> np.ndarray:
+    """Build a projection profile along an axis.
+
+    axis=1 -> collapse columns -> profile indexed by y (for horizontal lines)
+    axis=0 -> collapse rows    -> profile indexed by x (for vertical lines)
+
+    If use_edges=True, uses Sobel gradient magnitude instead of raw intensity,
+    which better isolates grid lines in photos with heavy character art.
+
+    Returns profile where grid lines correspond to peaks.
+    """
+    if use_edges:
+        # For H lines (axis=1): horizontal edges = Sobel in y
+        # For V lines (axis=0): vertical edges = Sobel in x
+        if axis == 1:
+            edges = np.abs(cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3))
+        else:
+            edges = np.abs(cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3))
+        return np.mean(edges, axis=axis)
+    else:
+        profile = np.mean(gray.astype(np.float64), axis=axis)
+        return float(np.max(profile)) - profile
+
+
+
+def _dominant_period(
+    profile: np.ndarray,
+    min_period: float,
+    max_period: float,
+) -> float:
+    """Find dominant period via autocorrelation with FFT.
+
+    Searches for the highest local maximum within [min_period, max_period].
+    Uses parabolic interpolation for sub-pixel accuracy.
+    """
+    centered = profile - np.mean(profile)
+    n = len(centered)
+
+    # FFT-based autocorrelation
+    fft = np.fft.fft(centered, n=2 * n)
+    acf = np.fft.ifft(fft * np.conj(fft)).real[:n]
+    if acf[0] > 0:
+        acf = acf / acf[0]
+
+    # Search for local maxima in valid range
+    lo = max(2, int(min_period))
+    hi = min(n - 2, int(max_period) + 1)
+
+    if lo >= hi:
+        return (min_period + max_period) / 2
+
+    best_idx = -1
+    best_val = -1.0
+    for i in range(lo, hi):
+        if acf[i] > acf[i - 1] and acf[i] >= acf[i + 1]:
+            if acf[i] > best_val:
+                best_val = acf[i]
+                best_idx = i
+
+    if best_idx < 0:
+        # No local maximum found — fall back to global max in range
+        best_idx = lo + int(np.argmax(acf[lo:hi]))
+
+    # Parabolic interpolation
+    if 1 <= best_idx < n - 1:
+        y0, y1, y2 = acf[best_idx - 1], acf[best_idx], acf[best_idx + 1]
+        denom = 2 * (2 * y1 - y0 - y2)
+        if abs(denom) > 1e-10:
+            offset = (y0 - y2) / denom
+            return best_idx + offset
+
+    return float(best_idx)
+
+
+def _find_peak_positions(
+    profile: np.ndarray,
+    period: float,
+) -> list[float]:
+    """Find grid-line positions as peaks in the projection profile.
+
+    Finds all local peaks, picks the longest consistent run at the expected
+    period, then extrapolates outward and snaps to local peaks.
+    """
+    n = len(profile)
+    if n < 3:
+        return []
+
+    # Find all local peaks (above mean)
+    threshold = np.mean(profile)
+    peaks: list[int] = []
+    for i in range(1, n - 1):
+        if profile[i] > profile[i - 1] and profile[i] >= profile[i + 1]:
+            if profile[i] > threshold:
+                peaks.append(i)
+
+    if len(peaks) < 2:
+        return [float(p) for p in peaks]
+
+    # Find longest consistent run
+    tolerance = 0.15 * period
+    best_run_start = 0
+    best_run_len = 1
+    run_start = 0
+    run_len = 1
+
+    for i in range(1, len(peaks)):
+        gap = peaks[i] - peaks[i - 1]
+        # Allow gap to be ~1x or ~2x period (missing line)
+        ratio = gap / period
+        if abs(ratio - round(ratio)) * period <= tolerance and 0.5 < ratio < 2.5:
+            run_len += 1
+        else:
+            if run_len > best_run_len:
+                best_run_len = run_len
+                best_run_start = run_start
+            run_start = i
+            run_len = 1
+
+    if run_len > best_run_len:
+        best_run_len = run_len
+        best_run_start = run_start
+
+    seed_peaks = peaks[best_run_start:best_run_start + best_run_len]
+
+    # Build refined positions from the seed
+    positions = [float(p) for p in seed_peaks]
+
+    def snap_to_peak(target: float) -> float:
+        """Snap target to nearest peak in profile within tolerance."""
+        lo_i = max(0, int(target - tolerance))
+        hi_i = min(n - 1, int(target + tolerance))
+        if lo_i >= hi_i:
+            return target
+        window = profile[lo_i:hi_i + 1]
+        local_peak = lo_i + int(np.argmax(window))
+        if profile[local_peak] > threshold * 0.5:
+            return float(local_peak)
+        return target
+
+    # Extrapolate backward
+    pos = positions[0]
+    while True:
+        target = pos - period
+        if target < 0:
+            break
+        snapped = snap_to_peak(target)
+        if snapped < 0:
+            break
+        positions.insert(0, snapped)
+        pos = snapped
+
+    # Extrapolate forward
+    pos = positions[-1]
+    while True:
+        target = pos + period
+        if target >= n:
+            break
+        snapped = snap_to_peak(target)
+        if snapped >= n:
+            break
+        positions.append(snapped)
+        pos = snapped
+
+    return positions
+
+
+def _classify_heavy_lines(
+    positions: list[float],
+    profile: np.ndarray,
+    period: float,
+) -> list[int]:
+    """Detect heavy (bold) grid lines occurring at regular multiples.
+
+    Tries multiples 2-8, checks if every Nth line has consistently
+    higher amplitude. Returns indices of heavy lines, or empty list.
+    """
+    if len(positions) < 4:
+        return []
+
+    # Measure amplitude at each position
+    amplitudes = []
+    for p in positions:
+        idx = int(round(p))
+        idx = max(0, min(len(profile) - 1, idx))
+        amplitudes.append(float(profile[idx]))
+
+    amplitudes = np.array(amplitudes)
+
+    best_multiple = 0
+    best_offset = 0
+    best_ratio = 0.0
+
+    for mult in range(2, 9):
+        if mult >= len(positions):
+            break
+
+        # Try all phase offsets — heavy lines may not start at index 0
+        for offset in range(mult):
+            heavy_amps = []
+            light_amps = []
+            for i, amp in enumerate(amplitudes):
+                if i % mult == offset:
+                    heavy_amps.append(amp)
+                else:
+                    light_amps.append(amp)
+
+            if not heavy_amps or not light_amps:
+                continue
+
+            heavy_mean = float(np.mean(heavy_amps))
+            light_mean = float(np.mean(light_amps))
+            if light_mean > 0:
+                ratio = heavy_mean / light_mean
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_multiple = mult
+                    best_offset = offset
+
+    if best_ratio > 1.3 and best_multiple > 0:
+        return [i for i in range(len(positions)) if i % best_multiple == best_offset]
+
+    return []
+
+
+def _acf_peak_score(profile: np.ndarray, min_lag: int, max_lag: int) -> float:
+    """Score a profile's periodicity by its strongest ACF peak in [min_lag, max_lag]."""
+    centered = profile - np.mean(profile)
+    n = len(centered)
+    fft = np.fft.fft(centered, n=2 * n)
+    acf = np.fft.ifft(fft * np.conj(fft)).real[:n]
+    if acf[0] > 0:
+        acf = acf / acf[0]
+
+    best = 0.0
+    for j in range(min_lag, min(max_lag, n - 1)):
+        if acf[j] > acf[j - 1] and acf[j] >= acf[j + 1] and acf[j] > best:
+            best = float(acf[j])
+    return best
+
+
+def _best_strip_profile(
+    gray: np.ndarray,
+    axis: int,
+    period_hint: float,
+    n_strips: int = 5,
+) -> np.ndarray:
+    """Select the projection profile strip with strongest periodicity.
+
+    Divides the image into strips perpendicular to the target lines,
+    builds a projection profile per strip, scores each by autocorrelation
+    peak strength near the expected period, and returns the best one.
+    This avoids character-art contamination since some strips will be
+    in empty grid areas.
+
+    Also tries edge-enhanced profiles and picks the overall best.
+    """
+    h, w = gray.shape[:2]
+    # Tight scoring range to avoid sub-harmonics pulling the selection
+    score_min = max(5, int(0.7 * period_hint))
+    score_max = int(1.5 * period_hint) + 1
+
+    best_profile = None
+    best_score = -1.0
+
+    # For H lines (axis=1): strips divide along x (columns)
+    # For V lines (axis=0): strips divide along y (rows)
+    strip_dim = w if axis == 1 else h
+    strip_size = strip_dim // n_strips
+
+    for use_edges in [False, True]:
+        # Full-image profile
+        full = _build_projection_profile(gray, axis, use_edges=use_edges)
+        score = _acf_peak_score(full, score_min, score_max)
+        if score > best_score:
+            best_score = score
+            best_profile = full
+
+        # Per-strip profiles
+        for s in range(n_strips):
+            start = s * strip_size
+            end = start + strip_size if s < n_strips - 1 else strip_dim
+
+            if axis == 1:
+                strip = gray[:, start:end]
+            else:
+                strip = gray[start:end, :]
+
+            if strip.size == 0:
+                continue
+
+            profile = _build_projection_profile(strip, axis, use_edges=use_edges)
+            score = _acf_peak_score(profile, score_min, score_max)
+            if score > best_score:
+                best_score = score
+                best_profile = profile
+
+    return best_profile
+
+
+def find_grid_positions(
+    corrected_image: np.ndarray,
+    h_period_hint: float,
+    v_period_hint: float,
+    expected_rows: int = 58,
+    expected_cols: int = 36,
+) -> GridDetectionResult:
+    """Find precise grid line positions on a corrected axis-aligned image.
+
+    Uses projection profiles (intensity sums along rows/columns) to detect
+    grid lines as peaks. The period hints from Phase 2 guide the search.
+
+    Args:
+        corrected_image: BGR image after geometric correction.
+        h_period_hint: Approximate vertical spacing between H lines (pixels).
+        v_period_hint: Approximate horizontal spacing between V lines (pixels).
+        expected_rows: Expected number of horizontal grid lines.
+        expected_cols: Expected number of vertical grid lines.
+
+    Returns:
+        GridDetectionResult with positions, periods, and heavy line indices.
+    """
+    gray = cv2.cvtColor(corrected_image, cv2.COLOR_BGR2GRAY)
+
+    # Horizontal lines (profile along y-axis, collapse columns)
+    h_profile = _best_strip_profile(gray, axis=1, period_hint=h_period_hint)
+    h_period = _dominant_period(
+        h_profile,
+        min_period=0.5 * h_period_hint,
+        max_period=2.0 * h_period_hint,
+    )
+    h_positions = _find_peak_positions(h_profile, h_period)
+    h_heavy = _classify_heavy_lines(h_positions, h_profile, h_period)
+
+    # Vertical lines (profile along x-axis, collapse rows)
+    v_profile = _best_strip_profile(gray, axis=0, period_hint=v_period_hint)
+    v_period = _dominant_period(
+        v_profile,
+        min_period=0.5 * v_period_hint,
+        max_period=2.0 * v_period_hint,
+    )
+    v_positions = _find_peak_positions(v_profile, v_period)
+    v_heavy = _classify_heavy_lines(v_positions, v_profile, v_period)
+
+    return GridDetectionResult(
+        h_positions=h_positions,
+        v_positions=v_positions,
+        h_period=h_period,
+        v_period=v_period,
+        h_heavy_indices=h_heavy,
+        v_heavy_indices=v_heavy,
     )
