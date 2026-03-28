@@ -25,6 +25,7 @@ export function resolve(
   width: number,
   height: number,
   tileMap: TileMap,
+  isClimbing: boolean = false,
 ): CollisionResult {
   let resultX = worldX;
   let resultY = worldY;
@@ -91,12 +92,15 @@ export function resolve(
         break;
       }
 
-      // Platform tiles: only block from above (falling onto them)
-      if (tile.type === 'platform' && vy > 0) {
+      // Platform tiles: only block from above (falling onto them), never while climbing
+      if (tile.type === 'platform' && vy > 0 && !isClimbing) {
         const tileTop = Math.floor(leadingEdgeY / TILE_SIZE) * TILE_SIZE;
-        // Only collide if player's feet were above the platform before this frame
         const previousFeetY = worldY + height - 1;
-        if (previousFeetY <= tileTop) {
+        // Allow landing if feet were above the platform, OR if there's a
+        // ladder directly below this platform (player climbed through it).
+        const centerX = worldX + width / 2;
+        const hasLadderBelow = tileMap.getTileAt(centerX, tileTop + TILE_SIZE).type === 'ladder';
+        if (previousFeetY <= tileTop || hasLadderBelow) {
           resultY = tileTop - height;
           resultVy = 0;
           grounded = true;
@@ -107,10 +111,22 @@ export function resolve(
   }
 
   // ── Ladder detection ────────────────────────────
-  // Check if the player's center overlaps a ladder tile
+  // Check if any tile from the player's center down to their feet is a ladder.
+  // Scanning the lower body (not just center) lets tall characters climb all
+  // the way up until their feet clear the ladder before dismounting.
+  // Also check one tile below feet so the player can start climbing down
+  // from a platform that sits directly above a ladder.
   const centerX = resultX + width / 2;
-  const centerY = resultY + height / 2;
-  const onLadder = tileMap.getTileAt(centerX, centerY).type === 'ladder';
+  const topCheckRow = Math.floor((resultY + height / 2) / TILE_SIZE);
+  const bottomCheckRow = Math.floor((resultY + height - 1) / TILE_SIZE);
+  const belowFeetRow = Math.floor((resultY + height) / TILE_SIZE);
+  let onLadder = false;
+  for (let row = topCheckRow; row <= belowFeetRow + 1; row++) {
+    if (tileMap.getTileAt(centerX, row * TILE_SIZE).type === 'ladder') {
+      onLadder = true;
+      break;
+    }
+  }
 
   if (DEBUG && (hitWallLeft || hitWallRight || hitCeiling || grounded)) {
     const flags = [

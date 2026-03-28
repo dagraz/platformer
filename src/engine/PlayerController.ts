@@ -1,4 +1,4 @@
-import { Player, InputState, PhysicsParams, PlayerState, DEBUG } from './types';
+import { Player, InputState, PhysicsParams, PlayerState, DEBUG, TILE_SIZE } from './types';
 import { TileMap } from './TileMap';
 import { applyGravity, applyWalk, applyJump, applyFriction, applyClimb } from './Physics';
 import { resolve } from './Collision';
@@ -16,7 +16,19 @@ export function updatePlayer(
   // Determine if we're climbing
   const wantsClimb = (input.up || input.down) && player.onLadder;
   const isClimbing = player.state === 'climb';
-  const shouldClimb = wantsClimb || (isClimbing && player.onLadder && !input.jumpPressed);
+
+  // Allow climbing to continue briefly past the ladder top so the player
+  // can smoothly reach the platform above instead of snapping. Limited to
+  // one tile past the ladder — once there's no ladder within a tile below
+  // the player's feet, the grace period ends.
+  const centerX = player.worldX + player.width / 2;
+  const feetY = player.worldY + player.height;
+  const ladderNearFeet =
+    tileMap.getTileAt(centerX, feetY).type === 'ladder' ||
+    tileMap.getTileAt(centerX, feetY + TILE_SIZE).type === 'ladder';
+  const climbingPastTop = isClimbing && !player.onLadder && input.up && ladderNearFeet;
+
+  const shouldClimb = wantsClimb || (isClimbing && player.onLadder && !input.jumpPressed) || climbingPastTop;
 
   let vx: number;
   let vy: number;
@@ -47,12 +59,17 @@ export function updatePlayer(
     jumpHoldTimer = jump.jumpHoldTimer;
   }
 
-  // Resolve collision (X first, then Y)
+  // Resolve collision (X first, then Y).
+  // During climbingPastTop, don't mark as climbing in collision so platforms
+  // can catch the player once their feet clear the platform edge. The player
+  // is moving upward (vy < 0) during this phase, so platforms won't block
+  // the upward movement — they only activate when vy > 0.
   const col = resolve(
     player.worldX, player.worldY,
     vx, vy,
     player.width, player.height,
     tileMap,
+    shouldClimb && !climbingPastTop,
   );
 
   // Determine facing direction
@@ -62,7 +79,7 @@ export function updatePlayer(
 
   // Determine player state
   let state: PlayerState;
-  if (shouldClimb && col.onLadder) {
+  if (shouldClimb && (col.onLadder || climbingPastTop) && !col.grounded) {
     state = 'climb';
   } else if (col.vy < -0.1) {
     state = 'jump';
