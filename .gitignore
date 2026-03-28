@@ -3,3 +3,8 @@ dist/
 .vite/
 *.local
 .DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
