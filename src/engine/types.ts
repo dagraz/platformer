@@ -60,7 +60,7 @@ export interface PhysicsParams {
 
 // ── Entities at runtime ────────────────────────────
 
-export type PlayerState = 'idle' | 'walk' | 'jump' | 'fall' | 'climb';
+export type PlayerState = 'idle' | 'walk' | 'jump' | 'fall' | 'land' | 'climb';
 
 export interface Player {
   worldX: number;

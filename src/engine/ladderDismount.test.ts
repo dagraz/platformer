@@ -120,7 +120,7 @@ describe('Ladder dismount onto platform', () => {
     }
 
     expect(landed).toBe(true);
-    expect(player.state).toBe('idle');
+    expect(['idle', 'land']).toContain(player.state);
     expect(player.worldY + player.height).toBe(platformTop);
   });
 

@@ -21,6 +21,19 @@ export class SpriteSheet {
    * Falls back to 'idle' row 0 / frame 0 if the state is missing.
    */
   getFrame(state: PlayerState, elapsedMs: number): { sx: number; sy: number; sw: number; sh: number } {
+    // 'land' uses the last frame of the 'fall' row
+    if (state === 'land') {
+      const fallInfo = this.states['fall'];
+      if (fallInfo && fallInfo.frames > 1) {
+        return {
+          sx: (fallInfo.frames - 1) * this.frameWidth,
+          sy: fallInfo.row * this.frameHeight,
+          sw: this.frameWidth,
+          sh: this.frameHeight,
+        };
+      }
+    }
+
     const info = this.states[state] ?? this.states['idle'];
     if (!info) {
       // Absolute fallback: top-left frame

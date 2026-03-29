@@ -79,6 +79,7 @@ export function updatePlayer(
   if (input.right && !input.left) facing = 'right';
 
   // Determine player state
+  const LAND_DURATION_MS = 150;
   let state: PlayerState;
   if (shouldClimb && (col.onLadder || climbingPastTop) && !col.grounded) {
     state = 'climb';
@@ -86,6 +87,12 @@ export function updatePlayer(
     state = 'jump';
   } else if (col.vy > 0.1 && !col.grounded) {
     state = 'fall';
+  } else if (player.state === 'fall' && col.grounded) {
+    // Just landed — show landing pose briefly
+    state = 'land';
+  } else if (player.state === 'land' && player.animationElapsedMs < LAND_DURATION_MS) {
+    // Still in landing pose
+    state = 'land';
   } else if (Math.abs(col.vx) > 0.1) {
     state = 'walk';
   } else {
