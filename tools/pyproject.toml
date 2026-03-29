@@ -19,6 +19,7 @@ sprite-extract = "sprite_tools.cli.extract:main"
 sprite-clean = "sprite_tools.cli.clean:main"
 sprite-normalize = "sprite_tools.cli.normalize:main"
 sprite-assemble = "sprite_tools.cli.assemble:main"
+sprite-pipeline = "sprite_tools.cli.pipeline:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
