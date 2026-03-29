@@ -12,6 +12,7 @@ export function updatePlayer(
   input: InputState,
   params: PhysicsParams,
   tileMap: TileMap,
+  dt: number,
 ): Player {
   // Determine if we're climbing
   const wantsClimb = (input.up || input.down) && player.onLadder;
@@ -91,6 +92,11 @@ export function updatePlayer(
     state = 'idle';
   }
 
+  // Animation elapsed: reset on state change, accumulate on same state
+  const animationElapsedMs = state !== player.state
+    ? 0
+    : player.animationElapsedMs + dt;
+
   const newPlayer: Player = {
     ...player,
     worldX: col.worldX,
@@ -102,6 +108,7 @@ export function updatePlayer(
     jumpHoldTimer,
     grounded: col.grounded,
     onLadder: col.onLadder,
+    animationElapsedMs,
   };
 
   if (DEBUG && state !== player.state) {

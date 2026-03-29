@@ -1,12 +1,14 @@
 import { TileMap } from '../engine/TileMap';
 import { CameraState, Player, VIEWPORT_WIDTH, VIEWPORT_HEIGHT } from '../engine/types';
 import { renderTiles } from './TileRenderer';
+import { SpriteRenderer } from './SpriteRenderer';
 
 export function render(
   ctx: CanvasRenderingContext2D,
   tileMap: TileMap,
   camera: CameraState,
   player?: Player,
+  spriteRenderer?: SpriteRenderer,
 ): void {
   // Clear
   ctx.clearRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
@@ -36,23 +38,19 @@ export function render(
     const px = player.worldX - screenOrigin.worldX - camera.offsetX;
     const py = player.worldY - screenOrigin.worldY - camera.offsetY;
 
-    ctx.fillStyle = '#E74C3C'; // red rectangle
-    ctx.fillRect(px, py, player.width, player.height);
-
-    // Direction indicator (small triangle)
-    ctx.fillStyle = '#C0392B';
-    const cx = player.facing === 'right' ? px + player.width - 8 : px + 8;
-    const cy = py + 20;
-    ctx.beginPath();
-    if (player.facing === 'right') {
-      ctx.moveTo(cx, cy - 6);
-      ctx.lineTo(cx + 10, cy);
-      ctx.lineTo(cx, cy + 6);
+    if (spriteRenderer) {
+      spriteRenderer.drawPlayer(
+        ctx,
+        player.state,
+        player.animationElapsedMs,
+        px,
+        py,
+        player.facing,
+      );
     } else {
-      ctx.moveTo(cx, cy - 6);
-      ctx.lineTo(cx - 10, cy);
-      ctx.lineTo(cx, cy + 6);
+      // Fallback: red rectangle if sprites not loaded
+      ctx.fillStyle = '#E74C3C';
+      ctx.fillRect(px, py, player.width, player.height);
     }
-    ctx.fill();
   }
 }

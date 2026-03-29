@@ -4,12 +4,15 @@ import { InputManager } from '../engine/InputManager';
 import { GameLoop } from '../engine/GameLoop';
 import { updatePlayer } from '../engine/PlayerController';
 import { updateCamera } from '../engine/Camera';
+import { SpriteSheet } from '../engine/SpriteSheet';
+import { SpriteRenderer } from '../renderer/SpriteRenderer';
 import { defaultPhysics } from '../data/defaultPhysics';
 import {
   CameraState,
   InputState,
   LevelData,
   Player,
+  SpriteManifest,
   VIEWPORT_WIDTH,
   VIEWPORT_HEIGHT,
   TILE_SIZE,
@@ -64,10 +67,25 @@ export function GameCanvas() {
       offsetY: 0,
     };
     let inputLocked = false;
+    let spriteRenderer: SpriteRenderer | undefined;
 
-    fetch('/assets/levels/demo.json')
-      .then(res => res.json())
-      .then((levelData: LevelData) => {
+    // Load sprite sheet image + manifest in parallel with level data
+    const loadSprites = Promise.all([
+      fetch('/assets/sprites/player.manifest.json').then(r => r.json()) as Promise<SpriteManifest>,
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = '/assets/sprites/player.png';
+      }),
+    ]).then(([manifest, image]) => {
+      spriteRenderer = new SpriteRenderer(new SpriteSheet(manifest), image);
+    });
+
+    Promise.all([
+      fetch('/assets/levels/demo.json').then(res => res.json()) as Promise<LevelData>,
+      loadSprites,
+    ]).then(([levelData]) => {
         tileMap.load(levelData);
 
         const start = findPlayerStart(levelData);
@@ -84,6 +102,7 @@ export function GameCanvas() {
           onLadder: false,
           jumpHoldTimer: -1,
           currentScreen: start.screenKey,
+          animationElapsedMs: 0,
         };
 
         camera.currentScreen = start.screenKey;
@@ -93,13 +112,13 @@ export function GameCanvas() {
 
         inputManager.attach();
 
-        gameLoop.setUpdateCallback(() => {
+        gameLoop.setUpdateCallback((dt: number) => {
           if (!player) return;
 
           // Lock input during screen transitions
           const input = inputLocked ? EMPTY_INPUT : inputManager.poll();
           const params = (window as any).__physics ?? defaultPhysics;
-          player = updatePlayer(player, input, params, tileMap);
+          player = updatePlayer(player, input, params, tileMap, dt);
 
           // Update camera (detect transitions)
           const camResult = updateCamera(camera, player, tileMap);
@@ -121,6 +140,7 @@ export function GameCanvas() {
               grounded: false,
               jumpHoldTimer: -1,
               currentScreen: start.screenKey,
+              animationElapsedMs: 0,
             };
             camera = {
               currentScreen: start.screenKey,
@@ -134,7 +154,7 @@ export function GameCanvas() {
         });
 
         gameLoop.setRenderCallback(() => {
-          render(ctx, tileMap, camera, player ?? undefined);
+          render(ctx, tileMap, camera, player ?? undefined, spriteRenderer);
         });
 
         gameLoop.start();

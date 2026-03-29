@@ -75,6 +75,7 @@ export interface Player {
   onLadder: boolean;
   jumpHoldTimer: number;
   currentScreen: string;
+  animationElapsedMs: number;
 }
 
 export interface Collectible {

@@ -91,6 +91,7 @@ function makePlayer(worldX: number, worldY: number, state: Player['state'] = 'id
     onLadder: false,
     jumpHoldTimer: -1,
     currentScreen: '0,0',
+    animationElapsedMs: 0,
   };
 }
 
@@ -110,7 +111,7 @@ describe('Ladder dismount onto platform', () => {
     let landed = false;
     for (let frame = 0; frame < 200; frame++) {
       const input = player.state === 'climb' ? upInput : noInput;
-      player = updatePlayer(player, input, physics, tileMap);
+      player = updatePlayer(player, input, physics, tileMap, 1000 / 60);
 
       if (player.grounded && player.worldY + player.height <= platformTop + 2) {
         landed = true;
@@ -133,7 +134,7 @@ describe('Ladder dismount onto platform', () => {
 
     for (let i = 0; i < 60; i++) {
       const input = player.state === 'climb' ? upInput : noInput;
-      player = updatePlayer(player, input, physics, tileMap);
+      player = updatePlayer(player, input, physics, tileMap, 1000 / 60);
     }
 
     expect(player.worldY + player.height).toBeLessThanOrEqual(platformTop + 1);
@@ -151,7 +152,7 @@ describe('Ladder dismount onto platform', () => {
 
     const downInput: InputState = { ...noInput, down: true };
     for (let i = 0; i < 30; i++) {
-      player = updatePlayer(player, downInput, physics, tileMap);
+      player = updatePlayer(player, downInput, physics, tileMap, 1000 / 60);
     }
 
     expect(player.worldY + player.height).toBeGreaterThan(platformTop);
@@ -170,7 +171,7 @@ describe('Ladder dismount onto platform', () => {
 
     for (let frame = 0; frame < 200; frame++) {
       const input = player.state === 'climb' ? upInput : noInput;
-      player = updatePlayer(player, input, physics, tileMap);
+      player = updatePlayer(player, input, physics, tileMap, 1000 / 60);
 
       const delta = Math.abs(player.worldY - prevY);
       expect(delta).toBeLessThanOrEqual(maxAllowedJump);
