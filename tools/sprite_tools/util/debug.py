@@ -88,6 +88,64 @@ def draw_grid(
     return result
 
 
+def draw_density_profile(
+    profile: np.ndarray,
+    path: str | Path,
+    width: int = 800,
+    height: int = 200,
+    color: tuple[int, int, int] = (0, 0, 200),
+    markers: list[float] | None = None,
+    marker_color: tuple[int, int, int] = (0, 200, 0),
+) -> None:
+    """Plot a 1D density signal as an image and save it.
+
+    Args:
+        profile: 1D numpy array of values
+        path: Output file path
+        width: Image width in pixels
+        height: Image height in pixels
+        color: BGR color for the profile line
+        markers: Optional x-positions to mark with vertical lines
+        marker_color: BGR color for marker lines
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    canvas = np.full((height, width, 3), 255, dtype=np.uint8)
+    n = len(profile)
+    if n == 0:
+        cv2.imwrite(str(path), canvas)
+        return
+
+    # Normalize profile to fit canvas height (leave 10px margin)
+    p = profile.astype(np.float64)
+    pmin, pmax = p.min(), p.max()
+    if pmax - pmin > 0:
+        p = (p - pmin) / (pmax - pmin)
+    else:
+        p = np.zeros_like(p)
+
+    margin = 10
+    usable = height - 2 * margin
+
+    # Draw the profile as connected line segments
+    for i in range(n - 1):
+        x1 = int(i * (width - 1) / (n - 1))
+        x2 = int((i + 1) * (width - 1) / (n - 1))
+        y1 = height - margin - int(p[i] * usable)
+        y2 = height - margin - int(p[i + 1] * usable)
+        cv2.line(canvas, (x1, y1), (x2, y2), color, 1)
+
+    # Draw markers
+    if markers:
+        for pos in markers:
+            x = int(pos * (width - 1) / (n - 1)) if n > 1 else 0
+            if 0 <= x < width:
+                cv2.line(canvas, (x, 0), (x, height), marker_color, 1)
+
+    cv2.imwrite(str(path), canvas)
+
+
 def save_side_by_side(
     image_a: np.ndarray,
     image_b: np.ndarray,

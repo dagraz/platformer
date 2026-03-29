@@ -15,8 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-meta", default="cells.json", help="Path for metadata JSON")
     parser.add_argument("--rows", required=True, help="Comma-separated row-to-state mapping")
     parser.add_argument("--skip-empty", default=True, type=bool, help="Skip unoccupied cells")
-    parser.add_argument("--padding", type=int, default=0, help="Pixels to inset from cell boundary")
-    parser.add_argument("--bleed", type=int, default=0, help="Pixels to expand crop beyond cell boundary")
+    parser.add_argument("--padding", type=int, default=0, help="Pixels to inset from cell boundary (trims fine grid lines at edges)")
     return parser
 
 

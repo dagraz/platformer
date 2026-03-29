@@ -1,4 +1,4 @@
-# Sprite Sheet Extractor — CLI Toolset PRD (v3)
+# Sprite Sheet Extractor — CLI Toolset PRD (v4)
 
 ## Problem
 
@@ -8,7 +8,7 @@ The platformer engine consumes sprite sheets in a precise format: a PNG grid of 
 
 A set of Unix command line tools forming a pipeline, built as a `tools/` subdirectory within the platformer engine project. Each tool does one job, takes files in, writes files out, and can be composed with others. The user runs them in sequence, inspecting intermediate results and adjusting parameters between steps.
 
-Colocating with the engine means the tools and engine share a single source of truth for sprite sheet format, frame dimensions, and manifest schema. We can always extract the tools into a standalone package later.
+Colocating with the engine means the tools and engine share a single source of truth for sprite sheet format, frame dimensions, and manifest schema.
 
 The pipeline:
 
@@ -30,20 +30,65 @@ Each step produces visible intermediate output that can be inspected and manuall
 The input is an image of hand-drawn sprites on graph paper. It may come from:
 
 - **Flatbed scanner** — high quality, minimal distortion, possible slight rotation from page placement
-- **Phone photo** — perspective skew from camera angle, rotation from phone tilt, variable lighting, background clutter (table, desk surface visible around the paper)
+- **Phone photo** — perspective skew from camera angle, rotation from phone tilt, variable lighting, background clutter (table, desk visible around the paper)
 
-### Graph Paper Convention
+### Graph Paper Structure
 
-All sprite sheets are drawn on the same type of graph paper (produced by the same program):
+All sprite sheets are drawn on paper produced by the same program (a spreadsheet). The paper has a specific, deterministic structure:
 
-- **Two-tier grid:** Fine lines forming small squares, and heavier lines forming larger rectangular cells.
-- **The heavier lines always define the cell boundaries.** The fine grid is internal texture within cells.
-- **Rows** correspond to animation states, labeled in handwriting (e.g., "Idling", "Walking").
+**Fine grid.** A uniform grid of lines covers the printable area. All lines are the same weight — there are no "heavy" or "bold" lines. The grid squares are 16×16 pixels at print resolution.
+
+**Cells are defined by the absence of grid lines.** The drawing cells are rectangular regions where the fine grid has been removed — blank white paper where artists draw. The surrounding areas (margins, gaps between cells) retain the fine grid.
+
+**Cell dimensions.** Each cell for a character sprite sheet is 4×8 fine-grid squares (64×128 pixels at 16px per square — matching the engine's character frame size).
+
+**Between cells:** The fine grid continues in the narrow strips between adjacent cells. These 1-fine-grid-square-wide strips (16px) of grid texture separate cells in the same row.
+
+**Between state rows:** The fine grid continues in the taller gaps between rows. These contain the printed label text and additional grid texture.
+
+**Labels.** Each state row has a label row above it (e.g., "Idling", "Walking", "Jumping, Launch and Apex", "Falling and near-landing", "Climbing, alternate hands"). Labels are printed by the program in a dedicated row — they are not inside the gutters or the drawing cells. Artists may overwrite or annotate these labels.
+
+**Layout of the standard character sprite sheet:**
+
+```
+┌──────────────────────────────────────────────────┐
+│ fine grid background                             │
+│                                                  │
+│  "Idling"                    "Character Sprite   │
+│  ┌─blank┐ ┌─blank┐ ┌─blank┐  Sheet"            │
+│  │cell  │ │cell  │ │cell  │ ┌─blank┐ ┌─blank┐  │
+│  │ 0,0  │ │ 0,1  │ │ 0,2  │ │ 0,3  │ │ 0,4  │  │
+│  │      │ │      │ │      │ │      │ │      │  │
+│  │4×8sq │ │4×8sq │ │4×8sq │ │4×8sq │ │4×8sq │  │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘  │
+│         ↑ 1-square grid strip between cells      │
+│                                                  │
+│  "Walking"                                       │
+│  ┌─blank┐ ┌─blank┐ ┌─blank┐ ┌─blank┐ ┌─blank┐  │
+│  │cell  │ │cell  │ │cell  │ │cell  │ │cell  │  │
+│  │ 1,0  │ │ 1,1  │ │ 1,2  │ │ 1,3  │ │ 1,4  │  │
+│  │      │ │      │ │      │ │      │ │      │  │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘  │
+│  ... more rows ...                               │
+└──────────────────────────────────────────────────┘
+```
+
+**Key insight for detection:** Cells are blank (no grid lines inside). The areas between and around cells retain the fine grid. Scanning horizontally or vertically, the transition from "grid present" (between cells) to "grid absent" (inside a cell) marks a cell boundary. Cells appear as wide valleys in a grid-density signal, separated by narrow peaks of grid texture. This is a strong signal because the contrast is between "lines exist" and "lines don't exist."
+
+### Drawing Conventions
+
+- **Rows** correspond to animation states. Row order matches the engine's state model.
 - **Columns** correspond to animation frames. Frame 1 is leftmost.
 - **Empty cells** are valid — they mean "no frame drawn yet."
-- **Drawings mostly stay within cell boundaries.** Art may bleed slightly across heavy grid lines (a pencil stroke crossing a line by a few pixels). The `--bleed` flag on `sprite-extract` expands the crop region to capture this overshoot.
-- **Drawings vary in size** within their cells. They won't fill edge-to-edge or be perfectly centered.
-- **The paper may vary in cell count.** Standard character sheets use one cell size; tile sheets might use 4×4 or 8×8 fine-grid cells per tile. The grid detection handles this because it finds heavy lines regardless of their spacing.
+- **Drawings stay within cell boundaries.** Art does not bleed across gutters.
+- **Drawings vary in size** within their cells. They won't fill edge-to-edge or be centered.
+
+### Variations
+
+The program can produce sheets with different cell sizes for different asset types:
+- Character sprites: 4×8 squares (64×128 px)
+- Tiles: could be 4×4 or 8×8 squares
+- The fine grid spacing (16px) and gutter convention (1 square) remain the same
 
 ---
 
@@ -57,7 +102,7 @@ All sprite sheets are drawn on the same type of graph paper (produced by the sam
 **Output:**
 - `corrected.png` — the deskewed, perspective-corrected image (or a copy of the original if no correction was needed)
 - `grid.json` — detected grid structure with cell boundaries in corrected-image coordinates
-- Optionally, a debug image showing detected lines, corners, and grid overlaid on the image
+- Optionally, a debug image showing detected grid and cells overlaid on the image
 
 ### Stage 1: Geometric Correction
 
@@ -67,41 +112,34 @@ Phone photos and crooked scans produce images where the grid lines aren't aligne
 
 **Perspective skew** — the camera was not directly above the paper. The paper appears as a trapezoid; parallel grid lines converge toward a vanishing point; cells near the camera appear larger. Fixed with a perspective transform (homography).
 
-Graph paper is a near-ideal calibration target because the lines are known to be straight, parallel within groups, perpendicular between groups, and uniformly spaced.
-
 **Correction algorithm:**
 
-1. **Detect lines.** Use LSD (Line Segment Detector) or Hough transform to find strong lines in the image.
-2. **Cluster by angle.** Separate lines into a near-horizontal group and a near-vertical group. Filter outliers (drawing edges, table edges, tablecloth patterns).
-3. **Assess distortion type.** Compute the standard deviation of angles within each line group:
-   - Both groups have low angle variance (< 0.3°): **rotation only**.
-   - Either group has significant angle variance: **perspective distortion**.
-4. **Compute correction transform:**
-   - *Rotation:* Affine rotation by the median angle of the horizontal group.
-   - *Perspective:* Find the four outermost grid lines (top, bottom, left, right). Compute their four intersection points (apparent corners of the grid). Determine the target rectangle from the grid's cell count and aspect ratio. Compute homography mapping source corners to target rectangle. For robustness, also fit a homography against all grid intersection points (overdetermined least-squares via `cv2.findHomography`) and prefer it if residual error is lower.
-5. **Validate.** Reject rotations exceeding `--max-rotation` degrees. Report residual error (mean deviation of corrected intersections from a perfect regular grid). Under 1px is good; over 3px warrants a warning.
-6. **Apply transform** using bilinear interpolation. Crop to the grid boundary (removes surrounding table/desk visible in phone photos). Save as `corrected.png`.
-
-**Auto mode decision tree:**
-
-```
-detect lines → cluster H and V groups
-  → no clear groups found?      → warn, skip correction
-  → rotation > max_rotation?    → error, suggest manual rotation
-  → angle std < 0.3° both?     → rotation only (affine)
-  → else                        → full perspective (homography)
-```
+1. **Detect lines.** Use LSD (Line Segment Detector) or Hough transform to find the fine grid lines. Since all lines are the same weight, any strong line in the image that's part of the regular grid pattern qualifies.
+2. **Cluster by angle.** Separate into near-horizontal and near-vertical groups. Filter outliers (drawing edges, table edges, tablecloth patterns).
+3. **Assess distortion type.** Compute angle variance within each group:
+   - Both groups low variance (< 0.3°): **rotation only** — affine rotate by the median angle.
+   - Either group has significant variance: **perspective** — lines are converging.
+4. **Compute perspective correction:** Find the four outermost grid lines, compute their intersection corners, determine the target rectangle, compute and apply homography.
+5. **Validate.** Reject rotations > `--max-rotation` degrees. Report residual error. Crop to grid boundary. Save `corrected.png`.
 
 ### Stage 2: Grid Detection
 
-After correction, the grid lines are axis-aligned. Detection proceeds:
+After correction, the fine grid lines are axis-aligned. Detection exploits the known paper structure:
 
-1. **Detect lines** on the corrected image — truly horizontal and truly vertical.
-2. **Distinguish heavy vs. fine grid lines.** Since the paper is consistent (same program), we can rely on intensity/thickness clustering. Detect all lines, measure weight, cluster into two groups, keep the heavier group. The `--fine-grid` flag switches to the lighter group (for future tile workflows).
-3. **Cluster line positions.** Merge nearby parallel lines (within a threshold) into single positions.
-4. **Regularize.** Compute median spacing, snap to even grid with ±10% tolerance.
-5. **Build cells.** Each pair of adjacent horizontal lines × adjacent vertical lines defines a cell rectangle.
-6. **Classify occupancy.** For each cell, compute pixel variance (std dev of grayscale values). Cells with significantly higher variance than the median empty cell are marked `occupied`.
+1. **Detect fine grid spacing.** Project pixel intensities to 1D profiles (sum columns → horizontal profile, sum rows → vertical profile). The fine grid creates regular peaks at uniform intervals. Use autocorrelation or FFT to find the fundamental spacing in pixels. This gives the scale factor between the image and the 16px logical grid.
+
+2. **Find cells via density profile.** Compute a grid-density signal along each axis — measuring how much periodic grid-line texture exists at each position. Cells (no grid lines) appear as **wide valleys**. The grid-filled areas between cells appear as **peaks**. Use autocorrelation strength at the grid spacing to distinguish "grid present" from "grid absent."
+
+3. **Classify valley types.** The density profile has two kinds of valleys:
+   - **Cell-sized valleys** (4 or 8 grid squares wide): actual drawing cells
+   - **Margin valleys**: large blank regions at the edges of the page (no grid lines)
+   Between the cell valleys, narrow peaks of grid texture correspond to the 1-square-wide strips between cells, and wider peaks correspond to the row gaps (with labels and grid texture).
+
+4. **Build cells.** Group valleys into rows and columns. Each valley is a cell rectangle.
+
+5. **Identify state rows.** The wider peaks between rows of cells contain label text. The pattern is: wide peak (with label) → row of cell valleys → wide peak (with label) → row of cell valleys → ...
+
+6. **Classify occupancy.** For each cell, compute pixel variance (grayscale std dev). Empty cells are nearly uniform white (no grid lines, no art). Cells with art have significantly higher variance.
 
 ### Output: `grid.json`
 
@@ -116,32 +154,31 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
   },
   "imageWidth": 2480,
   "imageHeight": 3200,
-  "gridLines": {
-    "horizontal": [45, 520, 1040, 1560, 2080, 2600],
-    "vertical": [30, 430, 830, 1230, 1630, 2030, 2430]
-  },
+  "fineGridSpacing": 18.7,
   "cells": [
     {
       "row": 0,
       "col": 0,
-      "x": 30,
-      "y": 45,
-      "width": 400,
-      "height": 475,
+      "x": 84,
+      "y": 120,
+      "width": 75,
+      "height": 150,
       "occupied": true
     },
     {
       "row": 0,
       "col": 1,
-      "x": 430,
-      "y": 45,
-      "width": 400,
-      "height": 475,
+      "x": 178,
+      "y": 120,
+      "width": 75,
+      "height": 150,
       "occupied": false
     }
   ]
 }
 ```
+
+Note: `fineGridSpacing` records the detected grid spacing in image pixels. This varies by scan DPI / photo resolution. Cell coordinates are in image pixels, not logical grid squares.
 
 ### Flags
 
@@ -154,8 +191,6 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 | `--max-rotation` | `15` | Maximum auto-correction rotation in degrees |
 | `--debug-image` | (none) | Path to write annotated debug image |
 | `--min-line-length` | `0.5` | Minimum line length as fraction of image dimension |
-| `--line-threshold` | `auto` | Line detection sensitivity. `auto` distinguishes heavy from fine |
-| `--fine-grid` | `false` | Detect the fine grid instead of the major grid |
 
 **Manual override:** The user can hand-edit `grid.json` to adjust cell boundaries or toggle occupancy. Downstream tools consume `grid.json` and don't care how it was produced.
 
@@ -193,7 +228,7 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
       "file": "cells/idle_0.png",
       "state": "idle",
       "frame": 0,
-      "sourceRect": { "x": 30, "y": 45, "width": 400, "height": 475 },
+      "sourceRect": { "x": 84, "y": 120, "width": 75, "height": 150 },
       "row": 0,
       "col": 0
     }
@@ -211,8 +246,7 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 | `--output-meta` | `cells.json` | Path for metadata JSON |
 | `--rows` | (required) | Comma-separated row-to-state mapping: `idle,walk,jump,fall,climb` |
 | `--skip-empty` | `true` | Skip cells detected as unoccupied |
-| `--padding` | `0` | Pixels to inset from cell boundary (positive = inset, trims grid lines from edges) |
-| `--bleed` | `0` | Pixels to expand crop beyond cell boundary (captures art that bleeds across grid lines) |
+| `--padding` | `0` | Pixels to inset from cell boundary (positive = inset into cell, trims fine grid lines at edges) |
 
 ---
 
@@ -228,9 +262,9 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 
 **Processing pipeline, in order:**
 
-1. **White balance** (optional). Normalize the paper background to true white. Corrects yellowish color casts from phone photos. Samples the background color and shifts the white point.
+1. **White balance** (optional). Normalize paper background to true white. Corrects warm color casts from phone photos.
 
-2. **Graph paper line removal** (optional, default on). Detect and remove the fine grid lines within the cell using morphological operations — horizontal and vertical kernels isolate thin regular structures. Removed lines are inpainted using surrounding pixel colors. Can be disabled for tile art that intentionally incorporates grid texture.
+2. **Graph paper line removal** (optional, default on). Detect and remove any fine grid lines at the cell edges (cells are mostly blank, but grid lines at the borders may partially intrude). Uses morphological operations — horizontal and vertical kernels isolate thin regular structures. The known grid spacing (from `fineGridSpacing` in `grid.json`) tunes the kernels precisely. Removed lines are inpainted using surrounding pixel colors.
 
 3. **Background color removal.** Identify the dominant background color (paper white/cream) and set matching pixels to transparent. Uses HSL distance for tolerance. Auto-detects by sampling corners, or user specifies.
 
@@ -238,7 +272,7 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 
 5. **Edge cleanup.** Optional morphological erosion to remove fringe pixels at drawing/background boundary.
 
-6. **Alpha feathering** (optional). Soften transparency edges by a configurable radius.
+6. **Alpha feathering** (optional). Soften transparency edges.
 
 **Flags:**
 
@@ -246,10 +280,10 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 |------|---------|-------------|
 | `--input-dir` | `cells/` | Directory of cell PNGs to clean |
 | `--output-dir` | `cleaned/` | Directory for cleaned PNGs |
+| `--grid` | `grid.json` | Grid definition (for fine grid spacing info) |
 | `--white-balance` | `false` | Apply white balance correction |
 | `--wb-sample` | `corners` | White balance sample source: `corners` or hex color |
 | `--remove-grid-lines` | `true` | Remove fine graph paper lines |
-| `--grid-line-width` | `auto` | Expected grid line width in pixels |
 | `--bg-color` | `auto` | Background color to key out (hex). `auto` samples corners |
 | `--bg-tolerance` | `30` | HSL distance tolerance (0–100) |
 | `--min-blob-size` | `20` | Minimum connected component size to keep |
@@ -272,9 +306,9 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 
 **What it does:**
 
-1. Find the bounding box of non-transparent pixels in each image.
-2. Scale the art to fit within target frame dimensions (configurable fit mode).
-3. Anchor within the frame (default: bottom, for consistent ground line).
+1. Find bounding box of non-transparent pixels.
+2. Scale art to fit within target frame dimensions (configurable fit mode).
+3. Anchor within frame (default: bottom, for consistent ground line).
 4. Write as exactly-sized PNGs with transparent background.
 
 **Flags:**
@@ -287,7 +321,7 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 | `--height` | `128` | Target frame height |
 | `--fit` | `contain` | Fit mode: `contain`, `cover`, `stretch`, `none` |
 | `--anchor` | `bottom` | Vertical anchor: `bottom`, `center`, `top` |
-| `--margin` | `2` | Pixels of margin within the frame |
+| `--margin` | `2` | Pixels of margin within frame |
 
 **Consistency report:** Prints scale factor per frame, warns on large variation.
 
@@ -344,13 +378,13 @@ After correction, the grid lines are axis-aligned. Detection proceeds:
 sprite-grid-detect -i photo.jpg -o grid.json \
   --corrected-image corrected.png --debug-image debug_grid.png
 
-# Step 2: Extract cells (--bleed captures art that crosses grid lines)
+# Step 2: Extract cells
 sprite-extract -i corrected.png -g grid.json \
-  --rows idle,walk,jump,fall,climb --padding 4 --bleed 6
+  --rows idle,walk,jump,fall,climb --padding 2
 
 # Step 3: Clean backgrounds
 sprite-clean --input-dir cells/ --output-dir cleaned/ \
-  --remove-grid-lines --bg-tolerance 35 --erode 1
+  --grid grid.json --remove-grid-lines --bg-tolerance 35 --erode 1
 
 # Step 4: Normalize to engine frame size
 sprite-normalize --input-dir cleaned/ --output-dir normalized/ \
@@ -370,6 +404,7 @@ sprite-assemble --input-dir normalized/ --meta cells.json \
 ```
 platformer/
 ├── tools/
+│   ├── pyproject.toml
 │   └── sprite_tools/
 │       ├── __init__.py
 │       ├── cli/
@@ -389,13 +424,10 @@ platformer/
 │       │   ├── color.py
 │       │   └── debug.py
 │       └── tests/
-│           ├── test_correction.py
-│           ├── test_grid.py
-│           ├── test_background.py
 │           └── fixtures/
-│               ├── wizard_scan.jpg
-│               └── dino_photo.jpg
-│   └── pyproject.toml
+│               ├── wizard character sheet.jpg
+│               ├── dino character sheet.jpg
+│               └── blank sprite sheet.pdf
 ├── src/                    # Platformer engine (existing)
 ├── public/                 # Engine assets (existing)
 └── ...
@@ -410,39 +442,32 @@ numpy >= 1.24
 Pillow >= 10.0
 ```
 
-### Installation
-
-```bash
-cd platformer/tools
-pip install -e .
-```
-
 ### Error Handling
 
-Creative tool philosophy: when ambiguous, pick the most likely answer, warn, continue, suggest the user inspect output and adjust flags. Never crash on recoverable conditions. `--debug-image` is the user's main way to understand what happened.
+Creative tool philosophy: when ambiguous, pick the most likely answer, warn, continue, suggest the user inspect output. `--debug-image` is the primary diagnostic tool.
 
 ---
 
 ## Edge Cases
 
-**Perspective-distorted phone photos.** Auto-corrected via homography. The dino photo is the test case — visible trapezoid, tablecloth visible around edges, slight color cast.
+**Perspective-distorted phone photos.** Auto-corrected via homography. The dino photo is the test case.
 
-**Stray marks outside the grid.** The dino photo has pencil scribbles on the left margin. Grid detection should ignore these — they're outside the detected grid boundary and get cropped during correction.
+**Stray marks outside the grid.** Pencil scribbles outside the grid boundary get cropped during correction.
 
-**Inconsistent cell sizes.** Grid regularization tolerates ±10% and snaps to median spacing.
+**Label text in row gaps.** Labels are printed text in the grid-filled gaps between state rows. The cell detection distinguishes these from cells because the label rows contain grid texture (high density), while cells are blank (low density).
 
-**Completely empty rows.** Omitted from output.
+**Drawings that are very light or small.** The occupancy classifier uses variance against the empty-cell baseline (which is nearly uniform white — no grid lines, no art). Even a faint drawing adds enough variance to register. But very light pencil sketches might be marginal — the user can toggle occupancy in `grid.json`.
 
-**Poor lighting / color casts.** The `--white-balance` flag on `sprite-clean` handles this. The dino photo has a slight warm cast from indoor lighting.
+**Different cell sizes.** The gutter-detection approach works regardless of cell size. A 4×4 cell (for tiles) creates a different density-profile pattern than a 4×8 cell, but the gutters look the same. The tool reports detected cell dimensions.
 
-**Different cell sizes for tiles.** The same pipeline works — different grid line spacing is detected automatically. The user specifies `--width 64 --height 64` (or other sizes) at the normalize step.
+**Curved or crumpled paper.** Not correctable with a homography. Out of scope.
 
 ---
 
 ## Open Questions
 
-1. **OCR on row labels?** Current decision: require `--rows` flag. The labels are handwritten and unreliable for OCR.
+1. **OCR on row labels?** Labels are printed (not handwritten), so OCR is more feasible than previously assumed. Still requiring `--rows` for V1, but could auto-detect from the printed text in a later version.
 
-2. **Tile-specific semantics?** The pipeline works for tiles with different `--width`/`--height`. No tile-specific tooling for V1 — just document the parameter overrides.
+2. **Should `sprite-clean` read `grid.json` for fine grid spacing?** Yes — knowing the exact grid line spacing makes morphological line removal much more precise. Added `--grid` flag.
 
-3. **Integration with Claude image generation?** Users with incomplete sheets could use Claude to generate additional frames. Out of scope for V1 but worth considering in export format design.
+3. **Tile-specific workflows?** Same pipeline, different `--width`/`--height` on normalize. Document the parameter overrides.

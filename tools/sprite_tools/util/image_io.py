@@ -52,6 +52,15 @@ def save_image(image: np.ndarray, path: str | Path) -> None:
         cv2.imwrite(str(path), image)
 
 
+def to_grayscale(image: np.ndarray) -> np.ndarray:
+    """Convert a BGR or BGRA image to single-channel grayscale."""
+    if image.ndim == 2:
+        return image
+    if image.shape[2] == 4:
+        return cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
 def image_dimensions(path: str | Path) -> tuple[int, int]:
     """Return (width, height) of an image without fully loading it."""
     path = Path(path)
