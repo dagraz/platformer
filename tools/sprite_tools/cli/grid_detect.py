@@ -7,6 +7,9 @@ Pipeline:
   4. Find cells — via template scaling or morphological detection
   5. Classify occupancy
   6. Write grid.json + optional corrected image + debug image
+
+When --detect-borders is used, the pipeline switches to border-based
+detection for printed template scans (Phase B).
 """
 
 import argparse
@@ -17,6 +20,7 @@ import cv2
 import numpy as np
 
 from sprite_tools.core.correction import correct_image
+from sprite_tools.core.border_detect import detect_cells_from_borders
 from sprite_tools.core.grid import (
     Cell,
     classify_occupancy,
@@ -68,7 +72,92 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-line-length", type=float, default=0.5,
         help="Minimum line length as fraction of image dimension (default: 0.5)",
     )
+    parser.add_argument(
+        "--detect-borders", action="store_true",
+        help="Use border-based detection for printed template scans",
+    )
+    parser.add_argument(
+        "--template-meta", default=None,
+        help="Path to template-meta.json (from sprite-template). "
+             "Provides expected cell positions and registration mark locations.",
+    )
     return parser
+
+
+def _run_border_detection(args, image: np.ndarray) -> None:
+    """Border-based detection path for printed template scans."""
+    corrected, cells, info = detect_cells_from_borders(
+        image, meta_path=args.template_meta,
+    )
+    h, w = corrected.shape[:2]
+
+    if args.corrected_image:
+        save_image(corrected, args.corrected_image)
+        print(f"Corrected image saved to {args.corrected_image}")
+
+    n_rows = info["rowCount"]
+    n_cols = info["colCount"]
+    occupied = [c for c in cells if c.occupied]
+    print(f"Detection: borders (border={info['borderThicknessPx']}px)")
+    print(f"Cells: {n_rows} rows x {n_cols} cols = {len(cells)} cells")
+    print(f"Occupied: {len(occupied)} cells")
+
+    for r in range(n_rows):
+        row_occupied = [c.col for c in occupied if c.row == r]
+        if row_occupied:
+            print(f"  Row {r}: {len(row_occupied)} occupied {row_occupied}")
+        else:
+            print(f"  Row {r}: 0 occupied")
+
+    # Build grid.json
+    corrected_image_path = args.corrected_image or ""
+    grid_json = {
+        "source": os.path.basename(args.input),
+        "correctedImage": os.path.basename(corrected_image_path) if corrected_image_path else "",
+        "correction": {
+            "type": "registration_marks" if args.template_meta else "none",
+        },
+        "detection": info["detection"],
+        "borderThicknessPx": info["borderThicknessPx"],
+        "imageWidth": w,
+        "imageHeight": h,
+        "cells": [
+            {
+                "row": c.row,
+                "col": c.col,
+                "x": c.x,
+                "y": c.y,
+                "width": c.width,
+                "height": c.height,
+                "occupied": c.occupied,
+            }
+            for c in cells
+        ],
+    }
+
+    with open(args.output, "w") as f:
+        json.dump(grid_json, f, indent=2)
+    print(f"Grid saved to {args.output}")
+
+    # Debug image
+    if args.debug_image:
+        debug = corrected.copy()
+        gray = to_grayscale(corrected)
+
+        overlay = debug.copy()
+        for c in cells:
+            color = (0, 200, 0) if c.occupied else (180, 180, 180)
+            cv2.rectangle(overlay, (c.x, c.y), (c.x + c.width, c.y + c.height),
+                          color, cv2.FILLED)
+        cv2.addWeighted(overlay, 0.25, debug, 0.75, 0, debug)
+
+        cell_rects = [(c.x, c.y, c.width, c.height) for c in cells]
+        cell_colors = [(0, 255, 0) if c.occupied else (128, 128, 128) for c in cells]
+        cell_labels = [f"{c.row},{c.col}" for c in cells]
+        debug = draw_rects(debug, cell_rects, cell_colors,
+                           thickness=2, labels=cell_labels)
+        save_side_by_side(debug, corrected, args.debug_image)
+        print(f"Debug image saved to {args.debug_image}")
 
 
 def main() -> None:
@@ -79,6 +168,11 @@ def main() -> None:
     image = load_image(args.input)
     h, w = image.shape[:2]
     print(f"Loaded image: {w}x{h}")
+
+    # --- Border detection path (for printed templates) ---
+    if args.detect_borders:
+        _run_border_detection(args, image)
+        return
 
     # --- Stage 2: Geometric correction ---
     if args.correct != "none":

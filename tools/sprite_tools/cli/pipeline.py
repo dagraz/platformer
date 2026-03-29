@@ -39,10 +39,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Working directory for intermediate files (default: sprite_work/)",
     )
 
-    # Template
+    # Template (graph paper legacy)
     parser.add_argument(
         "--template", default=None,
-        help="Path to template grid.json from blank sheet (recommended)",
+        help="Path to template grid.json from blank sheet (graph paper workflow)",
+    )
+
+    # Border detection (printed template workflow)
+    parser.add_argument(
+        "--detect-borders", action="store_true",
+        help="Use border-based detection for printed template scans",
+    )
+    parser.add_argument(
+        "--template-meta", default=None,
+        help="Path to template-meta.json (from sprite-template)",
     )
 
     # Grid detection
@@ -141,7 +151,11 @@ def main() -> None:
         "--corrected-image", corrected,
         "--correct", args.correct,
     ]
-    if args.template:
+    if args.detect_borders:
+        cmd += ["--detect-borders"]
+        if args.template_meta:
+            cmd += ["--template-meta", args.template_meta]
+    elif args.template:
         cmd += ["--template", args.template]
     if args.debug:
         cmd += ["--debug-image", os.path.join(work, "debug_grid.png")]

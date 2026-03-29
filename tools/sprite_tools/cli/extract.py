@@ -69,6 +69,13 @@ def main() -> None:
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # Auto-inset for border detection: the cell rects from border_detect
+    # are already inset past the border, but add a small safety margin
+    border_inset = 0
+    if grid.get("detection") == "borders":
+        border_inset = 2  # small extra safety margin
+        print(f"Border detection: adding {border_inset}px safety inset")
+
     # Process cells
     cells = grid["cells"]
     n_rows = max(c["row"] for c in cells) + 1 if cells else 0
@@ -89,7 +96,7 @@ def main() -> None:
         rows[row].sort(key=lambda c: c["col"])
 
     # Extract and save
-    pad = args.padding
+    pad = args.padding + border_inset
     extracted: list[dict] = []
 
     for row_idx in sorted(rows.keys()):

@@ -14,6 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
+sprite-template = "sprite_tools.cli.template:main"
 sprite-grid-detect = "sprite_tools.cli.grid_detect:main"
 sprite-extract = "sprite_tools.cli.extract:main"
 sprite-clean = "sprite_tools.cli.clean:main"

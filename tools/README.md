@@ -1,6 +1,6 @@
 # Sprite Tools
 
-CLI pipeline for extracting sprite sheets from hand-drawn character art on graph paper. Takes a flatbed scan of a graph paper character sheet and produces a sprite sheet PNG + engine manifest JSON.
+CLI pipeline for extracting sprite sheets from hand-drawn character art. Takes a flatbed scan and produces a sprite sheet PNG + engine manifest JSON.
 
 ## Setup
 
@@ -9,13 +9,37 @@ cd tools/
 pip install -e .
 ```
 
-This installs six commands: `sprite-grid-detect`, `sprite-extract`, `sprite-clean`, `sprite-normalize`, `sprite-assemble`, and `sprite-pipeline`.
+This installs seven commands: `sprite-template`, `sprite-grid-detect`, `sprite-extract`, `sprite-clean`, `sprite-normalize`, `sprite-assemble`, and `sprite-pipeline`.
 
 **Requirements:** Python 3.10+, OpenCV, NumPy, Pillow (installed automatically).
 
-## Quick Start
+## Quick Start: Template Workflow (Recommended)
 
-The fastest path from scan to sprite sheet:
+The most reliable path from drawing to sprite sheet. Thick black borders on a printed template make cell detection robust and prevent label text from leaking into extracted cells.
+
+```bash
+cd tools/
+
+# 1. Generate a printable template
+sprite-template --rows idle,walk,jump,fall,climb -o template.pdf
+
+# 2. Print template.pdf, draw characters inside the bordered cells, scan
+
+# 3. Run the full pipeline
+sprite-pipeline \
+  -i scan.jpg \
+  --detect-borders \
+  --template-meta template-meta.json \
+  --rows idle,walk,jump,fall,climb \
+  --duplicate idle=4,climb=2 \
+  -o player.png
+```
+
+Output: `player.png` (sprite sheet) + `player.manifest.json` (engine metadata).
+
+## Quick Start: Graph Paper Workflow (Legacy)
+
+For scans of characters drawn on graph paper (without printed borders):
 
 ```bash
 cd tools/
@@ -35,35 +59,26 @@ sprite-pipeline \
   -o wizard.png
 ```
 
-Output: `wizard.png` (sprite sheet) + `wizard.manifest.json` (engine metadata).
+## Input Format: Printed Template
 
-## Input Format
+Generate with `sprite-template`. The template has:
 
-The tools expect a **flatbed scan** of a character sheet drawn on graph paper with this structure:
+- **Thick black borders** around each cell (detected via contour detection)
+- **Pre-printed labels** above each row, outside the borders (cannot leak into cells)
+- **Registration marks** at four corners for deskewing
+- **White interior** — no graph paper grid lines to remove
+
+## Input Format: Graph Paper (Legacy)
+
+A **flatbed scan** of a character sheet drawn on graph paper:
 
 - **Graph paper background**: Uniform fine grid lines (~16px squares at 300 DPI)
 - **Cells**: Blank rectangles where grid lines have been removed (the drawing areas)
-- **Cell size**: 4×8 grid squares per cell (e.g., 64×128 px at the grid's scale)
-- **Cell spacing**: 1 grid square between cells
-- **Rows**: Each row is one animation state (idle, walk, jump, etc.), with label text above
+- **Cell size**: 4×8 grid squares per cell (64×128 px at the grid's scale)
+- **Rows**: Each row is one animation state, with label text above
 - **Frames**: Each cell in a row is one animation frame, left to right
 
 Camera photos are **not currently supported** — only flatbed scans.
-
-## Template Grid
-
-For reliable results, generate a template from the blank graph paper sheet first:
-
-```bash
-sprite-grid-detect \
-  -i "sprite_tools/tests/fixtures/blank_sheet-1.png" \
-  --correct none \
-  -o template_grid.json
-```
-
-This detects all cell positions on the empty sheet. When processing a real scan, pass `--template template_grid.json` to scale the known grid layout to the scan's resolution instead of auto-detecting cells (which can miss cells that contain character art).
-
-The template only needs to be generated once per paper format.
 
 ## Pipeline Overview
 
@@ -236,6 +251,7 @@ tools/
 ├── README.md
 └── sprite_tools/
     ├── cli/
+    │   ├── template.py       # Template PDF generator
     │   ├── grid_detect.py    # Stage 1: grid detection
     │   ├── extract.py        # Stage 2: cell extraction
     │   ├── clean.py          # Stage 3: background removal
@@ -243,10 +259,12 @@ tools/
     │   ├── assemble.py       # Stage 5: sprite sheet assembly
     │   └── pipeline.py       # All-in-one wrapper
     ├── core/
-    │   ├── correction.py     # Rotation/perspective correction
-    │   ├── grid.py           # Grid spacing + cell detection
-    │   ├── background.py     # Background removal
-    │   └── transform.py      # Art bounds + scaling
+    │   ├── template_layout.py  # Template geometry computation
+    │   ├── border_detect.py    # Border-based cell detection
+    │   ├── correction.py       # Rotation/perspective correction
+    │   ├── grid.py             # Grid spacing + cell detection
+    │   ├── background.py       # Background removal
+    │   └── transform.py        # Art bounds + scaling
     ├── util/
     │   ├── image_io.py       # Load/save images
     │   ├── color.py          # HSL conversion, white balance

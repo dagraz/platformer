@@ -331,9 +331,212 @@ sprite-assemble --input-dir normalized/ --meta cells.json --output wizard.png --
 
 ---
 
+## Phase A: Template Generator (`sprite-template`)
+
+**Goal:** Generate a printable template PDF with thick black bordered cells, pre-printed labels, and registration marks. Users print this, draw inside the borders, and scan.
+
+**Why:** The graph paper workflow is fragile — label text leaks into cells, grid detection depends on tuning thresholds, blank-region inference breaks with filled cells. Thick black printed borders give the pipeline explicit cell boundaries via contour detection. Labels outside the borders physically cannot leak into extracted cells.
+
+**Build: `core/template_layout.py`**
+
+```python
+@dataclass
+class TemplateMeta:
+    dpi: int
+    paper_width_px: int
+    paper_height_px: int
+    border_thickness_px: int
+    registration_marks: list[tuple[int, int]]  # four (x, y) corners
+    rows: list[str]                            # state labels
+    cells: list[CellSpec]                      # row, col, x, y, w, h in px
+
+@dataclass
+class CellSpec:
+    row: int
+    col: int
+    x: int
+    y: int
+    width: int
+    height: int
+
+def compute_layout(
+    rows: list[str],
+    cols: int,
+    cell_width_squares: int,
+    cell_height_squares: int,
+    dpi: int,
+    paper: str,           # 'letter' or 'a4'
+    border_width_pt: float,
+) -> TemplateMeta:
+    """Compute cell positions, margins, registration marks for given config.
+    Cells are centered on the page with equal gutters between them.
+    Registration marks are placed at the four corners of the grid area."""
+```
+
+**Build: `cli/template.py`**
+
+- Renders the template as a raster image using Pillow at the specified DPI
+- Draws thick black rectangles (borders), row labels above each row, and filled registration mark squares at corners
+- Saves as PDF (Pillow `save(..., 'PDF')`)
+- Writes `template-meta.json` with all cell positions and metadata
+
+**Wire into `pyproject.toml`:** Add `sprite-template` entry point.
+
+**Checkpoint:**
+```bash
+sprite-template --rows idle,walk,jump,fall,climb --cols 7 -o template.pdf
+```
+- `template.pdf` opens in a PDF viewer, shows bordered cells with labels
+- `template-meta.json` has correct cell count (5 rows × 7 cols = 35 cells)
+- Print at 100% scale, borders are visible and thick enough to scan cleanly
+- Registration marks are clearly visible at all four corners
+
+---
+
+## Phase B: Border-Based Cell Detection
+
+**Goal:** Detect cell positions by finding thick black rectangular borders via contour detection. Replaces the morphological grid-density approach for template scans.
+
+**Build: `core/border_detect.py`**
+
+```python
+def find_registration_marks(
+    gray: np.ndarray,
+    expected_size_range: tuple[int, int] = (20, 80),
+) -> list[tuple[int, int]]:
+    """Find four solid black squares at the grid corners.
+    Threshold to binary, find contours, filter by:
+    - Approximately square aspect ratio
+    - Solid fill (contour area ≈ bounding rect area)
+    - Size within expected range
+    - Located near image corners
+    Returns four (x, y) center points, ordered: TL, TR, BL, BR."""
+
+def deskew_from_marks(
+    image: np.ndarray,
+    corners: list[tuple[int, int]],
+    meta: TemplateMeta,
+) -> np.ndarray:
+    """Compute affine/perspective transform from detected registration marks
+    to their expected axis-aligned positions (from template-meta.json).
+    Apply the warp and return the corrected image."""
+
+def find_cell_borders(
+    gray: np.ndarray,
+    expected_aspect: float = 0.5,  # width/height ≈ 1:2 for character cells
+    min_area: int = 1000,
+) -> list[tuple[int, int, int, int]]:
+    """Find thick black rectangular borders via contour detection.
+    1. Threshold to binary (printed black borders are near-zero luminance)
+    2. Find contours
+    3. Filter by:
+       - Rectangular shape (approxPolyDP with 4 vertices)
+       - Aspect ratio within tolerance of expected
+       - Area above minimum
+       - Not filled (contour encloses a mostly-white interior)
+    4. Sort by position (top-to-bottom, left-to-right)
+    Returns list of (x, y, width, height) inner bounding rects.
+    The inner rect is inset by border thickness so it represents
+    the drawable area, not the outer edge of the border."""
+
+def detect_with_meta(
+    gray: np.ndarray,
+    meta: TemplateMeta,
+) -> list[tuple[int, int, int, int]]:
+    """When template-meta.json is available, use expected cell positions
+    to validate and refine detected borders. Match detected contours to
+    expected cells, warn on mismatches."""
+```
+
+**Modify `cli/grid_detect.py`:**
+
+When `--detect-borders` is passed:
+1. Load image, convert to grayscale
+2. If `--template-meta` provided, load metadata
+3. Find registration marks → deskew
+4. Find cell borders → build cell list
+5. Classify occupancy (same variance approach, but on clean white interiors)
+6. Output same `grid.json` format as the graph paper path
+
+The output `grid.json` is identical in schema — downstream tools don't know or care which detection method was used. An additional `"detection": "borders"` field distinguishes them.
+
+**Checkpoint:**
+1. Print template, scan blank (no drawings)
+2. `sprite-grid-detect -i scan.jpg --detect-borders --template-meta template-meta.json --debug-image debug.png`
+3. `grid.json` has correct number of cells, all marked `occupied: false`
+4. Debug image shows detected borders as green rectangles, registration marks as red dots
+5. Deskew corrects any scanner rotation
+
+---
+
+## Phase C: Extraction with Border Inset
+
+**Goal:** When extracting from a bordered template scan, automatically inset crops to exclude the border line.
+
+**Modify `cli/extract.py`:**
+
+- Read `grid.json` metadata for `"detection": "borders"` and `"borderThicknessPx"`
+- When border detection was used, automatically apply an inset equal to `borderThicknessPx + 2` (border thickness plus a small safety margin)
+- This replaces the manual `--padding` flag for template scans
+- The `--padding` flag still works and adds additional inset on top
+
+**Modify `grid.json` output** (from grid_detect.py border path):
+
+Add metadata fields:
+```json
+{
+  "detection": "borders",
+  "borderThicknessPx": 4,
+  ...
+}
+```
+
+**Checkpoint:**
+1. Print template, draw a character in one cell, scan
+2. Run full pipeline with `--detect-borders`
+3. Extracted cell PNG has no black border pixels — just the drawing on white
+4. Compare with graph paper extraction of same character — template version has no label text, no grid lines
+
+---
+
+## Phase D: Pipeline Integration & Docs
+
+**Goal:** Wire the template workflow into the pipeline wrapper and update documentation.
+
+**Modify `cli/pipeline.py`:**
+
+- Add `--detect-borders` and `--template-meta` passthrough flags
+- When `--detect-borders` is set, route grid detection to border path
+- Auto-calculate border inset for extraction step
+
+**Modify `pyproject.toml`:**
+
+- Add `sprite-template` entry point (if not done in Phase A)
+- Verify all dependencies (Pillow for PDF generation)
+
+**Update `tools/README.md`:**
+
+- Add "Template Workflow (Recommended)" section at the top
+- Step-by-step: generate template → print → draw → scan → run pipeline
+- Keep "Graph Paper Workflow (Legacy)" section below
+- Include troubleshooting for common issues (scanner DPI, border detection failures)
+
+**Checkpoint:**
+```bash
+# Full template workflow in one pipeline command
+sprite-template --rows idle,walk,jump,fall,climb -o template.pdf
+# ... user prints, draws, scans ...
+sprite-pipeline -i scan.jpg --detect-borders --template-meta template-meta.json \
+  --rows idle,walk,jump,fall,climb -o player.png
+```
+- End-to-end produces a valid sprite sheet with no label leakage
+- Old graph paper workflow still works: `sprite-pipeline -i wizard.jpg --rows idle,walk,jump,fall,climb`
+
+---
+
 ## Phase 10: Convenience & Polish
 
-1. **`sprite-pipeline` wrapper** — all five steps in one command
+1. **`sprite-pipeline` wrapper** — all five steps in one command (including template support from Phase D)
 2. **Preview HTML** — `sprite-assemble --preview preview.html` generates animated preview page
 3. **Robustness** — large image downsampling, better error messages, input validation
 4. **`tools/README.md`** — quick start, full example, parameter tuning guide
@@ -369,3 +572,7 @@ Every `--debug-image` is a test artifact. The density profile plots (Phase 2) ar
 | Grid line removal damages art | Inpainting artifacts | Lines are ~1px at scan resolution. At 64×128 output, artifacts are subpixel. Known grid spacing makes kernels precise. |
 | Background removal eats light-colored art | Pink hat, yellow feet disappear | HSL distance. Per-file `--files` reruns. Tolerance tuning documented. |
 | Perspective correction quality on extreme angles | Stretched pixels | Validate residual error. Warn if > 3px. Document "photograph near-overhead." |
+| Printed borders too thin to detect at low DPI | Border contours missed | Default 3pt border → ~4px at 300 DPI. Recommend scanning at ≥200 DPI. Warn if detected borders < expected count. |
+| Pencil art touches or overlaps border line | Art cropped at border edge | Inset by border thickness + margin. Document "draw at least 2mm from borders." |
+| Registration marks obscured by scanner margin | Can't deskew | Place marks inset from page edge. Fall back to border-angle deskew if marks not found. |
+| Contour detection picks up non-border rectangles | False cell detections | Filter by expected aspect ratio, size range, and grid regularity. Use template-meta.json for validation when available. |
