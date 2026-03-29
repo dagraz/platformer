@@ -110,8 +110,8 @@ export interface MovingPlatform {
   screenKey: string;
   worldX: number;
   worldY: number;
-  width: 64;
-  height: 64;
+  width: number;
+  height: number;
   sprite: string;
   path: { worldX: number; worldY: number }[];
   speed: number;

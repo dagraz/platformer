@@ -4,13 +4,17 @@ import { InputManager } from '../engine/InputManager';
 import { GameLoop } from '../engine/GameLoop';
 import { updatePlayer } from '../engine/PlayerController';
 import { updateCamera } from '../engine/Camera';
+import { createEntities, updateEntities, getMovingPlatformUnderPlayer, resolveMovingPlatformCollision } from '../engine/EntityManager';
 import { SpriteSheet } from '../engine/SpriteSheet';
 import { SpriteRenderer } from '../renderer/SpriteRenderer';
 import { defaultPhysics } from '../data/defaultPhysics';
 import {
   CameraState,
+  Collectible,
   InputState,
   LevelData,
+  MovingPlatform,
+  NPC,
   Player,
   SpriteManifest,
   VIEWPORT_WIDTH,
@@ -68,6 +72,10 @@ export function GameCanvas() {
     };
     let inputLocked = false;
     let spriteRenderer: SpriteRenderer | undefined;
+    let collectibles: Collectible[] = [];
+    let npcs: NPC[] = [];
+    let movingPlatforms: MovingPlatform[] = [];
+    let score = 0;
 
     // Load sprite sheet image + manifest in parallel with level data
     const loadSprites = Promise.all([
@@ -107,6 +115,12 @@ export function GameCanvas() {
 
         camera.currentScreen = start.screenKey;
 
+        // Initialize entities from level data
+        const entities = createEntities(levelData);
+        collectibles = entities.collectibles;
+        npcs = entities.npcs;
+        movingPlatforms = entities.movingPlatforms;
+
         // Expose physics for console tuning (per build plan)
         (window as any).__physics = { ...defaultPhysics };
 
@@ -118,7 +132,30 @@ export function GameCanvas() {
           // Lock input during screen transitions
           const input = inputLocked ? EMPTY_INPUT : inputManager.poll();
           const params = (window as any).__physics ?? defaultPhysics;
+          // Apply moving platform velocity before physics
+          const platVel = getMovingPlatformUnderPlayer(player, movingPlatforms, camera.currentScreen);
+          if (platVel) {
+            player = {
+              ...player,
+              worldX: player.worldX + platVel.vx,
+              worldY: player.worldY + platVel.vy,
+            };
+          }
+
+          const prevWorldY = player.worldY;
+          const prevState = player.state;
+          const prevElapsedMs = player.animationElapsedMs;
           player = updatePlayer(player, input, params, tileMap, dt);
+
+          // Resolve collision against moving platforms (tile collision doesn't cover these)
+          player = resolveMovingPlatformCollision(player, prevWorldY, prevState, prevElapsedMs, dt, movingPlatforms, camera.currentScreen);
+
+          // Update entities
+          const entityResult = updateEntities(player, collectibles, npcs, movingPlatforms, camera.currentScreen);
+          collectibles = entityResult.collectibles;
+          npcs = entityResult.npcs;
+          movingPlatforms = entityResult.movingPlatforms;
+          score += entityResult.scoreAdded;
 
           // Update camera (detect transitions)
           const camResult = updateCamera(camera, player, tileMap);
@@ -154,7 +191,12 @@ export function GameCanvas() {
         });
 
         gameLoop.setRenderCallback(() => {
-          render(ctx, tileMap, camera, player ?? undefined, spriteRenderer);
+          render(ctx, tileMap, camera, player ?? undefined, spriteRenderer, {
+            collectibles,
+            npcs,
+            movingPlatforms,
+            score,
+          });
         });
 
         gameLoop.start();
