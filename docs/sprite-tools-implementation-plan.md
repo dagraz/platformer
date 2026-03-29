@@ -274,36 +274,9 @@ def feather_alpha(alpha, radius) -> np.ndarray
 
 Background removal pipeline. Support `--files` for per-file reruns, `--debug-image` for before/after.
 
-**Checkpoint:** Cleaned PNGs show drawings on transparency. Paper white is gone. Any grid lines at cell edges are partially removed (they're close to background color). Dedicated line removal in Phase 7 handles the rest.
+**Checkpoint:** Cleaned PNGs show drawings on transparency. Paper white is gone. Any grid lines at cell edges are also removed (they're close to background color — no separate grid line removal step needed since cells are blank rectangles where grid lines have been removed, so grid lines only appear at the very edges where `--padding` already trims most of them).
 
-**Tuning:** Try `--bg-tolerance` 20–50 on both fixtures. Find the sweet spot. The dino photo may need `--white-balance` for the warm cast.
-
----
-
-## Phase 7: Cleaning — Grid Line Removal
-
-**Goal:** Add fine grid line removal. Since we know the grid spacing from `grid.json`, this is precise.
-
-**Build: `core/morphology.py`**
-
-```python
-def detect_fine_grid_lines(image, grid_spacing) -> np.ndarray:
-    """Find thin horizontal and vertical lines at the known spacing.
-    Uses morphological opening with directional kernels sized to the
-    known grid spacing. Returns binary mask of detected lines."""
-
-def remove_lines_and_inpaint(image, line_mask) -> np.ndarray:
-    """Remove detected lines. Inpaint gaps through drawings using
-    cv2.inpaint() with Telea method."""
-```
-
-**Key advantage of knowing the grid spacing:** The morphological kernels can be tuned precisely. We know the lines are ~1px wide at a specific spacing. This eliminates false positives from the drawing's own lines (which are thicker and at irregular spacing).
-
-**Modify `cli/clean.py`:** Insert grid line removal as step 2 (after white balance, before background removal). Read `--grid grid.json` for spacing info.
-
-**Checkpoint:** Any grid lines intruding at cell edges are gone. The wizard's own pencil strokes (thicker, irregular) are preserved. Same for the dino.
-
-Compare with `--remove-grid-lines` on vs off to verify.
+**Tuning:** Try `--bg-tolerance` 20–50 on the wizard scan. Find the sweet spot.
 
 ---
 
@@ -341,7 +314,7 @@ def compute_scale_factor(art_w, art_h, target_w, target_h, fit, margin) -> float
 ```bash
 sprite-grid-detect -i wizard character sheet.jpg
 sprite-extract -i corrected.png -g grid.json --rows idle,walk,jump,fall,climb --padding 2
-sprite-clean --input-dir cells/ --output-dir cleaned/ --grid grid.json --remove-grid-lines --bg-tolerance 35 --erode 1
+sprite-clean --input-dir cells/ --output-dir cleaned/ --bg-tolerance 35 --erode 1
 sprite-normalize --input-dir cleaned/ --output-dir normalized/ --width 64 --height 128 --anchor bottom
 sprite-assemble --input-dir normalized/ --meta cells.json --output wizard.png --manifest wizard.manifest.json \
   --duplicate idle=4,climb=2

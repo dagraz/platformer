@@ -262,17 +262,15 @@ Note: `fineGridSpacing` records the detected grid spacing in image pixels. This 
 
 **Processing pipeline, in order:**
 
-1. **White balance** (optional). Normalize paper background to true white. Corrects warm color casts from phone photos.
+1. **White balance** (optional). Normalize paper background to true white.
 
-2. **Graph paper line removal** (optional, default on). Detect and remove any fine grid lines at the cell edges (cells are mostly blank, but grid lines at the borders may partially intrude). Uses morphological operations — horizontal and vertical kernels isolate thin regular structures. The known grid spacing (from `fineGridSpacing` in `grid.json`) tunes the kernels precisely. Removed lines are inpainted using surrounding pixel colors.
+2. **Background color removal.** Identify the dominant background color (paper white/cream) and set matching pixels to transparent. Uses HSL distance for tolerance. Auto-detects by sampling corners, or user specifies. Any residual grid lines at cell edges are close to paper white and are removed in this step.
 
-3. **Background color removal.** Identify the dominant background color (paper white/cream) and set matching pixels to transparent. Uses HSL distance for tolerance. Auto-detects by sampling corners, or user specifies.
+3. **Artifact cleanup.** Connected-component filter removes isolated pixel clusters smaller than `--min-blob-size`.
 
-4. **Artifact cleanup.** Connected-component filter removes isolated pixel clusters smaller than `--min-blob-size`.
+4. **Edge cleanup.** Optional morphological erosion to remove fringe pixels at drawing/background boundary.
 
-5. **Edge cleanup.** Optional morphological erosion to remove fringe pixels at drawing/background boundary.
-
-6. **Alpha feathering** (optional). Soften transparency edges.
+5. **Alpha feathering** (optional). Soften transparency edges.
 
 **Flags:**
 
@@ -283,7 +281,6 @@ Note: `fineGridSpacing` records the detected grid spacing in image pixels. This 
 | `--grid` | `grid.json` | Grid definition (for fine grid spacing info) |
 | `--white-balance` | `false` | Apply white balance correction |
 | `--wb-sample` | `corners` | White balance sample source: `corners` or hex color |
-| `--remove-grid-lines` | `true` | Remove fine graph paper lines |
 | `--bg-color` | `auto` | Background color to key out (hex). `auto` samples corners |
 | `--bg-tolerance` | `30` | HSL distance tolerance (0–100) |
 | `--min-blob-size` | `20` | Minimum connected component size to keep |
@@ -384,7 +381,7 @@ sprite-extract -i corrected.png -g grid.json \
 
 # Step 3: Clean backgrounds
 sprite-clean --input-dir cells/ --output-dir cleaned/ \
-  --grid grid.json --remove-grid-lines --bg-tolerance 35 --erode 1
+  --bg-tolerance 35 --erode 1
 
 # Step 4: Normalize to engine frame size
 sprite-normalize --input-dir cleaned/ --output-dir normalized/ \
@@ -417,7 +414,6 @@ platformer/
 │       │   ├── correction.py
 │       │   ├── grid.py
 │       │   ├── background.py
-│       │   ├── morphology.py
 │       │   └── transform.py
 │       ├── util/
 │       │   ├── image_io.py
