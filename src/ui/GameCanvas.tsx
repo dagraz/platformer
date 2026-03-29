@@ -7,6 +7,7 @@ import { updateCamera } from '../engine/Camera';
 import { createEntities, updateEntities, getMovingPlatformUnderPlayer, resolveMovingPlatformCollision } from '../engine/EntityManager';
 import { SpriteSheet } from '../engine/SpriteSheet';
 import { SpriteRenderer } from '../renderer/SpriteRenderer';
+import { SoundManager } from '../engine/SoundManager';
 import { defaultPhysics } from '../data/defaultPhysics';
 import {
   CameraState,
@@ -61,6 +62,7 @@ export function GameCanvas() {
     const tileMap = new TileMap();
     const inputManager = new InputManager();
     const gameLoop = new GameLoop();
+    const soundManager = new SoundManager();
 
     let player: Player | null = null;
     let camera: CameraState = {
@@ -121,8 +123,9 @@ export function GameCanvas() {
         npcs = entities.npcs;
         movingPlatforms = entities.movingPlatforms;
 
-        // Expose physics for console tuning (per build plan)
+        // Expose for console tuning (per build plan)
         (window as any).__physics = { ...defaultPhysics };
+        (window as any).__sound = soundManager;
 
         inputManager.attach();
 
@@ -150,6 +153,14 @@ export function GameCanvas() {
           // Resolve collision against moving platforms (tile collision doesn't cover these)
           player = resolveMovingPlatformCollision(player, prevWorldY, prevState, prevElapsedMs, dt, movingPlatforms, camera.currentScreen);
 
+          // Sound: jump and land detection
+          if (player.state === 'jump' && prevState !== 'jump') {
+            soundManager.play('jump');
+          }
+          if (player.state === 'land' && prevState === 'fall') {
+            soundManager.play('land');
+          }
+
           // Update entities
           const entityResult = updateEntities(player, collectibles, npcs, movingPlatforms, camera.currentScreen);
           collectibles = entityResult.collectibles;
@@ -157,10 +168,21 @@ export function GameCanvas() {
           movingPlatforms = entityResult.movingPlatforms;
           score += entityResult.scoreAdded;
 
+          // Sound: entity events (coin collection etc.)
+          for (const s of entityResult.soundsToPlay) {
+            soundManager.play(s);
+          }
+
           // Update camera (detect transitions)
+          const prevTargetScreen = camera.targetScreen;
           const camResult = updateCamera(camera, player, tileMap);
           camera = camResult.camera;
           inputLocked = camResult.inputLocked;
+
+          // Sound: screen transition start
+          if (camera.targetScreen !== null && prevTargetScreen === null) {
+            soundManager.play('transition');
+          }
 
           // Track current screen on player
           player = { ...player, currentScreen: camera.currentScreen };
