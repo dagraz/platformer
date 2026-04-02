@@ -8,10 +8,37 @@ import {
 
 const TILE_COLORS: Record<TileType, string> = {
   empty:    '#87CEEB', // sky blue
-  solid:    '#8B6914', // brown (ground_top uses same for now)
+  solid:    '#8B6914', // brown
   platform: '#999999', // gray
   ladder:   '#228B22', // green
 };
+
+/** Cache of loaded tile images keyed by sprite name. */
+const tileImageCache: Record<string, HTMLImageElement | null> = {};
+let tileImagesLoaded = false;
+
+/**
+ * Preload tile images from public/assets/tiles/.
+ * Call once at startup. Missing images are silently skipped (fallback to color).
+ */
+export function loadTileImages(spriteNames: string[]): Promise<void> {
+  const promises = spriteNames.map(name => {
+    if (tileImageCache[name] !== undefined) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        tileImageCache[name] = img;
+        resolve();
+      };
+      img.onerror = () => {
+        tileImageCache[name] = null; // mark as unavailable
+        resolve();
+      };
+      img.src = `/assets/tiles/${name}.png`;
+    });
+  });
+  return Promise.all(promises).then(() => { tileImagesLoaded = true; });
+}
 
 export function renderTiles(
   ctx: CanvasRenderingContext2D,
@@ -30,30 +57,34 @@ export function renderTiles(
       const tileId = tiles[row][col];
       const tileDef = level.tileTypes[tileId];
       const tileType = tileDef?.type ?? 'empty';
+      const spriteName = tileDef?.sprite;
 
-      // Differentiate ground_top vs ground_fill visually
-      let color = TILE_COLORS[tileType];
-      if (tileType === 'solid' && tileDef?.sprite === 'ground_fill') {
-        color = '#6B4400'; // darker brown for fill
+      const dx = offsetX + col * TILE_SIZE;
+      const dy = offsetY + row * TILE_SIZE;
+
+      // Always fill empty tiles with sky color
+      if (tileType === 'empty') {
+        ctx.fillStyle = TILE_COLORS.empty;
+        ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
+        continue;
       }
 
-      ctx.fillStyle = color;
-      ctx.fillRect(
-        offsetX + col * TILE_SIZE,
-        offsetY + row * TILE_SIZE,
-        TILE_SIZE,
-        TILE_SIZE,
-      );
+      // Try to draw tile image
+      const img = spriteName ? tileImageCache[spriteName] : null;
+      if (img) {
+        ctx.drawImage(img, dx, dy, TILE_SIZE, TILE_SIZE);
+      } else {
+        // Fallback to colored rectangles
+        let color = TILE_COLORS[tileType];
+        if (tileType === 'solid' && spriteName === 'ground_fill') {
+          color = '#6B4400';
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
 
-      // Draw subtle grid lines
-      if (tileType !== 'empty') {
+        // Subtle grid lines on fallback tiles
         ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-        ctx.strokeRect(
-          offsetX + col * TILE_SIZE,
-          offsetY + row * TILE_SIZE,
-          TILE_SIZE,
-          TILE_SIZE,
-        );
+        ctx.strokeRect(dx, dy, TILE_SIZE, TILE_SIZE);
       }
     }
   }

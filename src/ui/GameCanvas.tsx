@@ -23,6 +23,7 @@ import {
   TILE_SIZE,
 } from '../engine/types';
 import { render } from '../renderer/Renderer';
+import { loadTileImages } from '../renderer/TileRenderer';
 
 const EMPTY_INPUT: InputState = {
   left: false,
@@ -97,6 +98,12 @@ export function GameCanvas() {
       loadSprites,
     ]).then(([levelData]) => {
         tileMap.load(levelData);
+
+        // Load tile images (non-blocking — falls back to colored rects if missing)
+        const spriteNames = Object.values(levelData.tileTypes)
+          .map(t => t.sprite)
+          .filter((s): s is string => !!s && s !== 'sky');
+        loadTileImages(spriteNames);
 
         const start = findPlayerStart(levelData);
         player = {
