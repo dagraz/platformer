@@ -100,18 +100,27 @@ export function GameCanvas() {
 
     // Load NPC sprites (non-blocking — falls back to colored rects if missing)
     const loadNpcSprites = loadSpriteSheet('wizard').then(({ manifest, image }) => {
-      // Deferred until spriteRenderer exists — will be registered after player loads
       return { name: 'wizard', manifest, image };
+    }).catch(() => null);
+
+    // Load collectible sprites
+    const loadCoinSprites = loadSpriteSheet('coin').then(({ manifest, image }) => {
+      return { name: 'coin', manifest, image };
     }).catch(() => null);
 
     Promise.all([
       fetch('/assets/levels/demo.json').then(res => res.json()) as Promise<LevelData>,
       loadSprites,
       loadNpcSprites,
-    ]).then(([levelData, , npcResult]) => {
+      loadCoinSprites,
+    ]).then(([levelData, , npcResult, coinResult]) => {
         // Register NPC sprite sheets
         if (npcResult && spriteRenderer) {
           spriteRenderer.addNpcSheet(npcResult.name, new SpriteSheet(npcResult.manifest), npcResult.image);
+        }
+        // Register collectible sprite sheets
+        if (coinResult && spriteRenderer) {
+          spriteRenderer.addCollectibleSheet(coinResult.name, new SpriteSheet(coinResult.manifest), coinResult.image);
         }
         tileMap.load(levelData);
 

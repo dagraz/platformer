@@ -1,0 +1,7 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "states": {
+    "idle": { "row": 0, "frames": 2, "fps": 3 }
+  }
+}

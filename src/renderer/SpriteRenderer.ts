@@ -9,6 +9,7 @@ export class SpriteRenderer {
   private readonly sheet: SpriteSheet;
   private readonly image: HTMLImageElement;
   private readonly npcSheets: Map<string, { sheet: SpriteSheet; image: HTMLImageElement }> = new Map();
+  private readonly collectibleSheets: Map<string, { sheet: SpriteSheet; image: HTMLImageElement }> = new Map();
 
   constructor(sheet: SpriteSheet, image: HTMLImageElement) {
     this.sheet = sheet;
@@ -18,6 +19,11 @@ export class SpriteRenderer {
   /** Register an NPC sprite sheet by sprite name. */
   addNpcSheet(spriteName: string, sheet: SpriteSheet, image: HTMLImageElement): void {
     this.npcSheets.set(spriteName, { sheet, image });
+  }
+
+  /** Register a collectible sprite sheet by sprite name. */
+  addCollectibleSheet(spriteName: string, sheet: SpriteSheet, image: HTMLImageElement): void {
+    this.collectibleSheets.set(spriteName, { sheet, image });
   }
 
   /**
@@ -55,6 +61,26 @@ export class SpriteRenderer {
     // Map NPC behavior to animation state
     const state: PlayerState = behavior === 'pace' ? 'walk' : 'idle';
     this.drawSprite(ctx, entry.sheet, entry.image, state, elapsedMs, dx, dy, facing);
+    return true;
+  }
+
+  /**
+   * Draw an animated collectible. Returns false if no sheet is registered.
+   */
+  drawCollectible(
+    ctx: CanvasRenderingContext2D,
+    spriteName: string,
+    elapsedMs: number,
+    dx: number,
+    dy: number,
+    width: number,
+    height: number,
+  ): boolean {
+    const entry = this.collectibleSheets.get(spriteName);
+    if (!entry) return false;
+
+    const { sx, sy, sw, sh } = entry.sheet.getFrame('idle', elapsedMs);
+    ctx.drawImage(entry.image, sx, sy, sw, sh, dx, dy, width, height);
     return true;
   }
 

@@ -88,6 +88,7 @@ export interface Collectible {
   sprite: string;
   value: number;
   collected: boolean;
+  animationElapsedMs: number;
 }
 
 export interface NPC {

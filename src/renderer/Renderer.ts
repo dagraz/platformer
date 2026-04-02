@@ -81,15 +81,21 @@ export function render(
     // Collectibles
     for (const c of entities.collectibles) {
       if (c.collected || c.screenKey !== camera.currentScreen) continue;
-      const cx = c.worldX + ox + c.width / 2;
-      const cy = c.worldY + oy + c.height / 2;
-      ctx.fillStyle = '#FFD700';
-      ctx.beginPath();
-      ctx.arc(cx, cy, c.width * 0.35, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#DAA520';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      const cdx = c.worldX + ox;
+      const cdy = c.worldY + oy;
+
+      // Try sprite rendering, fall back to gold circle
+      if (!spriteRenderer?.drawCollectible(ctx, c.sprite, c.animationElapsedMs, cdx, cdy, c.width, c.height)) {
+        const cx = cdx + c.width / 2;
+        const cy = cdy + c.height / 2;
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(cx, cy, c.width * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#DAA520';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
 
     // NPCs (behind player)

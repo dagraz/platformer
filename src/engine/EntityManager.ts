@@ -32,6 +32,7 @@ export function createEntities(
         sprite: def.sprite ?? 'coin',
         value: def.value ?? 1,
         collected: false,
+        animationElapsedMs: 0,
       });
     } else if (def.type === 'npc') {
       const worldX = originX + def.x * TILE_SIZE;
@@ -103,22 +104,24 @@ export function updateEntities(
   let scoreAdded = 0;
   const soundsToPlay: string[] = [];
 
-  // ── Collectibles: overlap detection ──────────────
+  // ── Collectibles: overlap detection + animation ──
+  const frameDtMs = 1000 / 60; // ~16.67ms per frame at 60 Hz
   const updatedCollectibles = collectibles.map(c => {
-    if (c.collected || c.screenKey !== currentScreen) return c;
+    if (c.collected) return c;
+    if (c.screenKey !== currentScreen) return c;
+    const elapsed = c.animationElapsedMs + frameDtMs;
     if (aabbOverlap(
       player.worldX, player.worldY, player.width, player.height,
       c.worldX, c.worldY, c.width, c.height,
     )) {
       scoreAdded += c.value;
       soundsToPlay.push(c.sprite === 'coin' ? 'coin' : 'pickup');
-      return { ...c, collected: true };
+      return { ...c, collected: true, animationElapsedMs: elapsed };
     }
-    return c;
+    return { ...c, animationElapsedMs: elapsed };
   });
 
   // ── NPCs: pacing, facing, and animation ──────────
-  const frameDtMs = 1000 / 60; // ~16.67ms per frame at 60 Hz
   const updatedNPCs = npcs.map(npc => {
     if (npc.screenKey !== currentScreen) return npc;
     const elapsed = npc.animationElapsedMs + frameDtMs;
