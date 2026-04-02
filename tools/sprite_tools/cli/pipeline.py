@@ -1,10 +1,13 @@
 """sprite-pipeline: Run the full sprite extraction pipeline in one command.
 
 Chains: grid-detect → extract → clean → normalize → assemble
+        grid-detect → extract → clean → normalize → tile export (--tiles)
 """
 
 import argparse
+import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -28,11 +31,16 @@ def build_parser() -> argparse.ArgumentParser:
     # Output
     parser.add_argument(
         "-o", "--output", default="player.png",
-        help="Output sprite sheet path (default: player.png)",
+        help="Output sprite sheet path, or output directory when --tiles is set",
     )
     parser.add_argument(
         "--manifest", default=None,
         help="Output manifest path (default: <output>.manifest.json)",
+    )
+    parser.add_argument(
+        "--tiles", action="store_true",
+        help="Tile mode: export individual PNGs instead of assembling a sprite sheet. "
+             "-o sets the output directory.",
     )
     parser.add_argument(
         "--work-dir", default="sprite_work/",
@@ -141,7 +149,6 @@ def main() -> None:
     cells_json = os.path.join(work, "cells.json")
     cleaned_dir = os.path.join(work, "cleaned")
     normalized_dir = os.path.join(work, "normalized")
-    manifest = args.manifest or os.path.splitext(args.output)[0] + ".manifest.json"
 
     # Step 1: Grid detection
     cmd = [
@@ -198,22 +205,53 @@ def main() -> None:
     ]
     _run(cmd, "Step 4: Normalize")
 
-    # Step 5: Assemble
-    cmd = [
-        "sprite-assemble",
-        "--input-dir", normalized_dir,
-        "--meta", cells_json,
-        "--output", args.output,
-        "--manifest", manifest,
-        "--fps", args.fps,
-    ]
-    if args.duplicate:
-        cmd += ["--duplicate", args.duplicate]
-    _run(cmd, "Step 5: Assemble sprite sheet")
+    if args.tiles:
+        # Tile mode: export individual PNGs named by row label and frame index
+        tiles_dir = args.output
+        os.makedirs(tiles_dir, exist_ok=True)
 
-    print(f"\nDone! Output:")
-    print(f"  Sprite sheet: {args.output}")
-    print(f"  Manifest:     {manifest}")
+        with open(cells_json) as f:
+            cells_meta = json.load(f)
+
+        exported = []
+        for cell in cells_meta["cells"]:
+            src = os.path.join(normalized_dir, cell["filename"])
+            if not os.path.exists(src):
+                continue
+            # Name: rowlabel_frameindex.png (e.g. trees_0.png, bushes_2.png)
+            dst_name = f"{cell['state']}_{cell['frame']}.png"
+            dst = os.path.join(tiles_dir, dst_name)
+            shutil.copy2(src, dst)
+            exported.append(dst_name)
+
+        print(f"\n{'='*60}")
+        print(f"  Step 5: Export tiles")
+        print(f"{'='*60}")
+        print(f"Exported {len(exported)} tiles to {tiles_dir}/")
+        for name in exported:
+            print(f"  {name}")
+
+        print(f"\nDone! Output:")
+        print(f"  Tiles directory: {tiles_dir}")
+    else:
+        # Sprite sheet mode: assemble into a single sheet + manifest
+        manifest = args.manifest or os.path.splitext(args.output)[0] + ".manifest.json"
+
+        cmd = [
+            "sprite-assemble",
+            "--input-dir", normalized_dir,
+            "--meta", cells_json,
+            "--output", args.output,
+            "--manifest", manifest,
+            "--fps", args.fps,
+        ]
+        if args.duplicate:
+            cmd += ["--duplicate", args.duplicate]
+        _run(cmd, "Step 5: Assemble sprite sheet")
+
+        print(f"\nDone! Output:")
+        print(f"  Sprite sheet: {args.output}")
+        print(f"  Manifest:     {manifest}")
 
 
 if __name__ == "__main__":

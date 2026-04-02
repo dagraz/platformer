@@ -29,6 +29,10 @@ PRESETS: dict[str, tuple[list[str], int, int, int]] = {
         ["grass", "stone", "dirt", "water", "wood", "special"],
         8, 4, 4,
     ),
+    "decoration": (
+        ["trees", "bushes", "rocks", "misc"],
+        4, 4, 4,
+    ),
 }
 
 
