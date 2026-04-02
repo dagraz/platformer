@@ -67,20 +67,10 @@ export function renderTiles(
       const dx = offsetX + col * TILE_SIZE;
       const dy = offsetY + row * TILE_SIZE;
 
-      // Empty tiles: sky image or flat color, then optional decorative sprite on top
+      // Always fill empty tiles with sky color
       if (tileType === 'empty') {
-        const skyImg = tileImageCache['sky'];
-        if (skyImg) {
-          ctx.drawImage(skyImg, dx, dy, TILE_SIZE, TILE_SIZE);
-        } else {
-          ctx.fillStyle = TILE_COLORS.empty;
-          ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
-        }
-        // Draw decorative sprite over sky (e.g. grass tufts)
-        const decoImg = spriteName && spriteName !== 'sky' ? tileImageCache[spriteName] : null;
-        if (decoImg) {
-          ctx.drawImage(decoImg, dx, dy, TILE_SIZE, TILE_SIZE);
-        }
+        ctx.fillStyle = TILE_COLORS.empty;
+        ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
         continue;
       }
 
