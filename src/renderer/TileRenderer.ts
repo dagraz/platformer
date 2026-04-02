@@ -67,10 +67,14 @@ export function renderTiles(
       const dx = offsetX + col * TILE_SIZE;
       const dy = offsetY + row * TILE_SIZE;
 
-      // Always fill empty tiles with sky color
+      // Empty tiles: flat sky color, then optional decorative sprite on top
       if (tileType === 'empty') {
         ctx.fillStyle = TILE_COLORS.empty;
         ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
+        const decoImg = spriteName && spriteName !== 'sky' ? tileImageCache[spriteName] : null;
+        if (decoImg) {
+          ctx.drawImage(decoImg, dx, dy, TILE_SIZE, TILE_SIZE);
+        }
         continue;
       }
 
