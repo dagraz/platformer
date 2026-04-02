@@ -103,24 +103,31 @@ export function GameCanvas() {
       return { name: 'wizard', manifest, image };
     }).catch(() => null);
 
-    // Load collectible sprites
-    const loadCoinSprites = loadSpriteSheet('coin').then(({ manifest, image }) => {
-      return { name: 'coin', manifest, image };
-    }).catch(() => null);
+    // Load collectible sprites (coin + star variants)
+    const collectibleNames = ['coin', 'star_1', 'star_2', 'star_3', 'star_4'];
+    const loadCollectibleSprites = Promise.all(
+      collectibleNames.map(name =>
+        loadSpriteSheet(name)
+          .then(({ manifest, image }) => ({ name, manifest, image }))
+          .catch(() => null)
+      ),
+    );
 
     Promise.all([
       fetch('/assets/levels/demo.json').then(res => res.json()) as Promise<LevelData>,
       loadSprites,
       loadNpcSprites,
-      loadCoinSprites,
-    ]).then(([levelData, , npcResult, coinResult]) => {
+      loadCollectibleSprites,
+    ]).then(([levelData, , npcResult, collectibleResults]) => {
         // Register NPC sprite sheets
         if (npcResult && spriteRenderer) {
           spriteRenderer.addNpcSheet(npcResult.name, new SpriteSheet(npcResult.manifest), npcResult.image);
         }
         // Register collectible sprite sheets
-        if (coinResult && spriteRenderer) {
-          spriteRenderer.addCollectibleSheet(coinResult.name, new SpriteSheet(coinResult.manifest), coinResult.image);
+        for (const result of collectibleResults) {
+          if (result && spriteRenderer) {
+            spriteRenderer.addCollectibleSheet(result.name, new SpriteSheet(result.manifest), result.image);
+          }
         }
         tileMap.load(levelData);
 

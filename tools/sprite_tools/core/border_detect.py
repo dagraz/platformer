@@ -270,7 +270,7 @@ def assign_grid_positions(
 def classify_occupancy(
     gray: np.ndarray,
     cells: list[tuple[int, int, int, int, int, int]],
-    empty_variance_threshold: float = 100.0,
+    empty_variance_threshold: float = 15.0,
 ) -> list[DetectedCell]:
     """Mark cells as occupied or empty based on pixel variance.
 
@@ -297,6 +297,7 @@ def detect_cells_from_borders(
     image: np.ndarray,
     meta_path: str | Path | None = None,
     border_thickness_px: int | None = None,
+    variance_threshold: float | None = None,
 ) -> tuple[np.ndarray, list[DetectedCell], dict]:
     """Full border-based detection pipeline.
 
@@ -359,7 +360,10 @@ def detect_cells_from_borders(
     positioned = assign_grid_positions(rects)
 
     # Classify occupancy
-    cells = classify_occupancy(gray, positioned)
+    occ_kwargs = {}
+    if variance_threshold is not None:
+        occ_kwargs["empty_variance_threshold"] = variance_threshold
+    cells = classify_occupancy(gray, positioned, **occ_kwargs)
 
     info = {
         "detection": "borders",

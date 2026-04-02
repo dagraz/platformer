@@ -81,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to template-meta.json (from sprite-template). "
              "Provides expected cell positions and registration mark locations.",
     )
+    parser.add_argument(
+        "--variance-threshold", type=float, default=None,
+        help="Pixel variance threshold for occupancy detection. "
+             "Lower values detect lighter artwork (default: 15 for borders, auto for grid).",
+    )
     return parser
 
 
@@ -88,6 +93,7 @@ def _run_border_detection(args, image: np.ndarray) -> None:
     """Border-based detection path for printed template scans."""
     corrected, cells, info = detect_cells_from_borders(
         image, meta_path=args.template_meta,
+        variance_threshold=args.variance_threshold,
     )
     h, w = corrected.shape[:2]
 

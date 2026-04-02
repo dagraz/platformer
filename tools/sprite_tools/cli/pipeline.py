@@ -70,6 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Geometric correction mode (default: auto)",
     )
 
+    # Grid detection tuning
+    parser.add_argument(
+        "--variance-threshold", type=float, default=None,
+        help="Pixel variance threshold for occupancy detection. "
+             "Lower values detect lighter artwork (default: 15).",
+    )
+
     # Extraction
     parser.add_argument(
         "--padding", type=int, default=2,
@@ -162,7 +169,9 @@ def main() -> None:
         cmd += ["--detect-borders"]
         if args.template_meta:
             cmd += ["--template-meta", args.template_meta]
-    elif args.template:
+    if args.variance_threshold is not None:
+        cmd += ["--variance-threshold", str(args.variance_threshold)]
+    if not args.detect_borders and args.template:
         cmd += ["--template", args.template]
     if args.debug:
         cmd += ["--debug-image", os.path.join(work, "debug_grid.png")]

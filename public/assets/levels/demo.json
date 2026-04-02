@@ -58,16 +58,16 @@
   "entities": [
     { "type": "player_start",    "screen": "0,0", "x": 2,  "y": 12 },
 
-    { "type": "collectible",     "screen": "0,0", "x": 5,  "y": 9,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "0,0", "x": 10, "y": 6,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "0,0", "x": 11, "y": 6,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "0,0", "x": 18, "y": 3,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "0,0", "x": 19, "y": 3,  "sprite": "coin", "value": 1 },
+    { "type": "collectible",     "screen": "0,0", "x": 5,  "y": 9,  "sprite": "star_1", "value": 1 },
+    { "type": "collectible",     "screen": "0,0", "x": 10, "y": 6,  "sprite": "star_2", "value": 1 },
+    { "type": "collectible",     "screen": "0,0", "x": 11, "y": 6,  "sprite": "star_2", "value": 1 },
+    { "type": "collectible",     "screen": "0,0", "x": 18, "y": 3,  "sprite": "star_3", "value": 1 },
+    { "type": "collectible",     "screen": "0,0", "x": 19, "y": 3,  "sprite": "star_3", "value": 1 },
 
-    { "type": "collectible",     "screen": "1,0", "x": 12, "y": 5,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "1,0", "x": 13, "y": 5,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "1,0", "x": 14, "y": 5,  "sprite": "coin", "value": 1 },
-    { "type": "collectible",     "screen": "1,0", "x": 22, "y": 11, "sprite": "coin", "value": 1 },
+    { "type": "collectible",     "screen": "1,0", "x": 12, "y": 5,  "sprite": "star_4", "value": 1 },
+    { "type": "collectible",     "screen": "1,0", "x": 13, "y": 5,  "sprite": "star_4", "value": 1 },
+    { "type": "collectible",     "screen": "1,0", "x": 14, "y": 5,  "sprite": "star_4", "value": 1 },
+    { "type": "collectible",     "screen": "1,0", "x": 22, "y": 11, "sprite": "star_1", "value": 1 },
 
     { "type": "npc",             "screen": "1,0", "x": 21, "y": 12, "sprite": "wizard", "behavior": "pace", "paceRange": 3 },
 
