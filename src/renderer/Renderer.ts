@@ -5,10 +5,11 @@ import {
   MovingPlatform,
   NPC,
   Player,
+  TILE_SIZE,
   VIEWPORT_WIDTH,
   VIEWPORT_HEIGHT,
 } from '../engine/types';
-import { renderTiles } from './TileRenderer';
+import { renderTiles, getTileImage } from './TileRenderer';
 import { SpriteRenderer } from './SpriteRenderer';
 
 export interface RenderEntities {
@@ -57,11 +58,24 @@ export function render(
     // Moving platforms (behind player)
     for (const plat of entities.movingPlatforms) {
       if (plat.screenKey !== camera.currentScreen) continue;
-      ctx.fillStyle = '#8B7355';
-      ctx.fillRect(plat.worldX + ox, plat.worldY + oy, plat.width, plat.height);
-      ctx.strokeStyle = '#5C4033';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(plat.worldX + ox, plat.worldY + oy, plat.width, plat.height);
+      const px = plat.worldX + ox;
+      const py = plat.worldY + oy;
+
+      // Try to tile wood texture across platform width
+      const tileImg = getTileImage('bridge');
+      if (tileImg) {
+        const tileCount = Math.ceil(plat.width / TILE_SIZE);
+        for (let i = 0; i < tileCount; i++) {
+          const tw = Math.min(TILE_SIZE, plat.width - i * TILE_SIZE);
+          ctx.drawImage(tileImg, 0, 0, tw, TILE_SIZE, px + i * TILE_SIZE, py, tw, plat.height);
+        }
+      } else {
+        ctx.fillStyle = '#8B7355';
+        ctx.fillRect(px, py, plat.width, plat.height);
+        ctx.strokeStyle = '#5C4033';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px, py, plat.width, plat.height);
+      }
     }
 
     // Collectibles

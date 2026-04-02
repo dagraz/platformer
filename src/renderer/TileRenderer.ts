@@ -17,6 +17,11 @@ const TILE_COLORS: Record<TileType, string> = {
 const tileImageCache: Record<string, HTMLImageElement | null> = {};
 let tileImagesLoaded = false;
 
+/** Get a cached tile image by sprite name, or null if unavailable. */
+export function getTileImage(spriteName: string): HTMLImageElement | null {
+  return tileImageCache[spriteName] ?? null;
+}
+
 /**
  * Preload tile images from public/assets/tiles/.
  * Call once at startup. Missing images are silently skipped (fallback to color).
