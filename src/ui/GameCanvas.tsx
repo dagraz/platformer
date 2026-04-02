@@ -127,7 +127,7 @@ export function GameCanvas() {
         // Load tile images (non-blocking — falls back to colored rects if missing)
         const spriteNames = Object.values(levelData.tileTypes)
           .map(t => t.sprite)
-          .filter((s): s is string => !!s && s !== 'sky');
+          .filter((s): s is string => !!s);
         loadTileImages(spriteNames);
 
         const start = findPlayerStart(levelData);
