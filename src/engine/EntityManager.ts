@@ -48,6 +48,7 @@ export function createEntities(
         paceRange: (def.paceRange ?? 3) * TILE_SIZE,
         paceOriginX: worldX,
         paceDirection: 1,
+        animationElapsedMs: 0,
       });
     } else if (def.type === 'moving_platform') {
       const path = (def.path as [number, number][]).map(([tx, ty]) => ({
@@ -116,13 +117,15 @@ export function updateEntities(
     return c;
   });
 
-  // ── NPCs: pacing and facing ──────────────────────
+  // ── NPCs: pacing, facing, and animation ──────────
+  const frameDtMs = 1000 / 60; // ~16.67ms per frame at 60 Hz
   const updatedNPCs = npcs.map(npc => {
     if (npc.screenKey !== currentScreen) return npc;
+    const elapsed = npc.animationElapsedMs + frameDtMs;
 
     if (npc.behavior === 'face_player') {
       const facing = player.worldX > npc.worldX ? 'right' as const : 'left' as const;
-      return facing !== npc.facing ? { ...npc, facing } : npc;
+      return { ...npc, facing, animationElapsedMs: elapsed };
     }
 
     if (npc.behavior === 'pace') {
@@ -142,10 +145,10 @@ export function updateEntities(
         facing = 'right';
       }
 
-      return { ...npc, worldX, paceDirection, facing };
+      return { ...npc, worldX, paceDirection, facing, animationElapsedMs: elapsed };
     }
 
-    return npc;
+    return { ...npc, animationElapsedMs: elapsed };
   });
 
   // ── Moving platforms: path interpolation ─────────

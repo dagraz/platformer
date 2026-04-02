@@ -80,23 +80,39 @@ export function GameCanvas() {
     let movingPlatforms: MovingPlatform[] = [];
     let score = 0;
 
-    // Load sprite sheet image + manifest in parallel with level data
-    const loadSprites = Promise.all([
-      fetch('/assets/sprites/player.manifest.json').then(r => r.json()) as Promise<SpriteManifest>,
-      new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = '/assets/sprites/player.png';
-      }),
-    ]).then(([manifest, image]) => {
+    // Load a sprite sheet image + manifest pair
+    function loadSpriteSheet(name: string): Promise<{ manifest: SpriteManifest; image: HTMLImageElement }> {
+      return Promise.all([
+        fetch(`/assets/sprites/${name}.manifest.json`).then(r => r.json()) as Promise<SpriteManifest>,
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = `/assets/sprites/${name}.png`;
+        }),
+      ]).then(([manifest, image]) => ({ manifest, image }));
+    }
+
+    // Load player sprites
+    const loadSprites = loadSpriteSheet('player').then(({ manifest, image }) => {
       spriteRenderer = new SpriteRenderer(new SpriteSheet(manifest), image);
     });
+
+    // Load NPC sprites (non-blocking — falls back to colored rects if missing)
+    const loadNpcSprites = loadSpriteSheet('wizard').then(({ manifest, image }) => {
+      // Deferred until spriteRenderer exists — will be registered after player loads
+      return { name: 'wizard', manifest, image };
+    }).catch(() => null);
 
     Promise.all([
       fetch('/assets/levels/demo.json').then(res => res.json()) as Promise<LevelData>,
       loadSprites,
-    ]).then(([levelData]) => {
+      loadNpcSprites,
+    ]).then(([levelData, , npcResult]) => {
+        // Register NPC sprite sheets
+        if (npcResult && spriteRenderer) {
+          spriteRenderer.addNpcSheet(npcResult.name, new SpriteSheet(npcResult.manifest), npcResult.image);
+        }
         tileMap.load(levelData);
 
         // Load tile images (non-blocking — falls back to colored rects if missing)

@@ -103,6 +103,7 @@ export interface NPC {
   paceRange: number;
   paceOriginX: number;
   paceDirection: 1 | -1;
+  animationElapsedMs: number;
 }
 
 export interface MovingPlatform {

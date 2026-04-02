@@ -81,14 +81,17 @@ export function render(
     // NPCs (behind player)
     for (const npc of entities.npcs) {
       if (npc.screenKey !== camera.currentScreen) continue;
-      ctx.fillStyle = '#9B59B6';
-      ctx.fillRect(npc.worldX + ox, npc.worldY + oy, npc.width, npc.height);
-      // Facing indicator
-      ctx.fillStyle = '#7D3C98';
-      const eyeX = npc.facing === 'right'
-        ? npc.worldX + ox + npc.width - 12
-        : npc.worldX + ox + 4;
-      ctx.fillRect(eyeX, npc.worldY + oy + 16, 8, 8);
+      const nx = npc.worldX + ox;
+      const ny = npc.worldY + oy;
+
+      // Try sprite rendering, fall back to colored rectangle
+      if (!spriteRenderer?.drawNpc(ctx, npc.sprite, npc.behavior, npc.animationElapsedMs, nx, ny, npc.facing)) {
+        ctx.fillStyle = '#9B59B6';
+        ctx.fillRect(nx, ny, npc.width, npc.height);
+        ctx.fillStyle = '#7D3C98';
+        const eyeX = npc.facing === 'right' ? nx + npc.width - 12 : nx + 4;
+        ctx.fillRect(eyeX, ny + 16, 8, 8);
+      }
     }
 
     // Score display

@@ -1,0 +1,31 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 128,
+  "states": {
+    "idle": {
+      "row": 0,
+      "frames": 4,
+      "fps": 4
+    },
+    "walk": {
+      "row": 1,
+      "frames": 4,
+      "fps": 10
+    },
+    "jump": {
+      "row": 2,
+      "frames": 2,
+      "fps": 1
+    },
+    "fall": {
+      "row": 3,
+      "frames": 2,
+      "fps": 1
+    },
+    "climb": {
+      "row": 4,
+      "frames": 2,
+      "fps": 6
+    }
+  }
+}

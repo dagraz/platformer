@@ -67,7 +67,7 @@
     { "type": "collectible",     "screen": "1,0", "x": 14, "y": 5,  "sprite": "coin", "value": 1 },
     { "type": "collectible",     "screen": "1,0", "x": 22, "y": 11, "sprite": "coin", "value": 1 },
 
-    { "type": "npc",             "screen": "1,0", "x": 21, "y": 12, "sprite": "villager", "behavior": "pace", "paceRange": 3 },
+    { "type": "npc",             "screen": "1,0", "x": 21, "y": 12, "sprite": "wizard", "behavior": "pace", "paceRange": 3 },
 
     { "type": "moving_platform", "screen": "1,0", "x": 7,  "y": 11, "sprite": "platform_wood", "path": [[7,11],[17,11]], "speed": 1.5 }
   ],
